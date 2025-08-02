@@ -1,0 +1,886 @@
+{
+    "directions": [
+        {
+            "name": "Английский язык",
+            "description": "Изучение английского языка в интерактивной форме",
+            "cost": 3500.0,
+            "trial_cost": 700.0,
+            "min_age": 5,
+            "max_age": 16,
+            "gender": 2.0
+        },
+        {
+            "name": "Французский язык",
+            "description": "Погружение во французский язык и культуру",
+            "cost": 3800.0,
+            "trial_cost": 760.0,
+            "min_age": 6,
+            "max_age": 16,
+            "gender": 2.0
+        },
+        {
+            "name": "Программирование",
+            "description": "Основы программирования для детей",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 7,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Шахматный клуб с 5 лет",
+            "description": "Развитие логики и мышления через шахматы",
+            "cost": 3200.0,
+            "trial_cost": 640.0,
+            "min_age": 5,
+            "max_age": 14,
+            "gender": 2.0
+        },
+        {
+            "name": "Подготовка к школе и ВПР",
+            "description": "Комплексная подготовка к школьным программам",
+            "cost": 3700.0,
+            "trial_cost": 740.0,
+            "min_age": 5,
+            "max_age": 8,
+            "gender": 2.0
+        },
+        {
+            "name": "Вокальная студия с 5 лет",
+            "description": "Развитие вокальных данных и артистизма",
+            "cost": 3300.0,
+            "trial_cost": 660.0,
+            "min_age": 5,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Театральная студия с 5 лет",
+            "description": "Актерское мастерство и сценическая речь",
+            "cost": 3600.0,
+            "trial_cost": 720.0,
+            "min_age": 5,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Танцевальная студия с 4 лет",
+            "description": "Современные и классические танцы",
+            "cost": 3400.0,
+            "trial_cost": 680.0,
+            "min_age": 4,
+            "max_age": 16,
+            "gender": 2.0
+        },
+        {
+            "name": "Студия живописи с 4 лет и с 6 лет",
+            "description": "Обучение основам рисования и живописи",
+            "cost": 3100.0,
+            "trial_cost": 620.0,
+            "min_age": 4,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Гончарная мастерская с 5 лет",
+            "description": "Творческие занятия по лепке из глины",
+            "cost": 3900.0,
+            "trial_cost": 780.0,
+            "min_age": 5,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Лаборатория опытов с 6 лет",
+            "description": "Увлекательные научные эксперименты",
+            "cost": 3750.0,
+            "trial_cost": 750.0,
+            "min_age": 6,
+            "max_age": 14,
+            "gender": 2.0
+        },
+        {
+            "name": "Речевая студия \"Говоруша\" (5-7 лет)",
+            "description": "Развитие речи и коммуникативных навыков",
+            "cost": 3550.0,
+            "trial_cost": 710.0,
+            "min_age": 5,
+            "max_age": 7,
+            "gender": 2.0
+        },
+        {
+            "name": "Курс \"Пишу красиво\"",
+            "description": "Каллиграфия и основы красивого письма",
+            "cost": 3250.0,
+            "trial_cost": 650.0,
+            "min_age": 7,
+            "max_age": 12,
+            "gender": 2.0
+        },
+        {
+            "name": "Логопедические занятия",
+            "description": "Индивидуальные занятия с логопедом",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 3,
+            "max_age": 10,
+            "gender": 2.0
+        },
+        {
+            "name": "Музыкальный ансамбль на разных инструментах",
+            "description": "Совместное музицирование",
+            "cost": 3850.0,
+            "trial_cost": 770.0,
+            "min_age": 8,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Индивидуальные занятия по гитаре",
+            "description": "Уроки игры на гитаре",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 8,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Индивидуальные занятия по истории",
+            "description": "Помощь по школьной программе и углубленное изучение",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 10,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Индивидуальные занятия по обществознанию",
+            "description": "Подготовка к экзаменам",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 10,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Индивидуальные занятия по математике",
+            "description": "Устранение пробелов и углубление знаний",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 7,
+            "max_age": 18,
+            "gender": 2.0
+        },
+        {
+            "name": "Индивидуальные занятия по русскому языку",
+            "description": "Улучшение грамотности и подготовка к ОГЭ/ЕГЭ",
+            "cost": 4000.0,
+            "trial_cost": 800.0,
+            "min_age": 7,
+            "max_age": 18,
+            "gender": 2.0
+        }
+    ],
+    "students": [
+        {
+            "id": "f093edea-7e3d-4778-9cbe-7679ece56b22",
+            "name": "катерина",
+            "dob": "2015-08-02",
+            "gender": "Девочка",
+            "parent_id": "02e9901a-7e7c-48a5-bd40-1b7b482e6c59",
+            "directions": [
+                "Французский язык",
+                "Подготовка к школе и ВПР",
+                "Студия живописи с 4 лет и с 6 лет"
+            ],
+            "notes": "вамувамувам",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc",
+            "name": "Иванов Иван",
+            "dob": "2015-01-15",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Английский язык",
+                " Шахматный клуб"
+            ],
+            "notes": "Любит головоломки",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "b67d0dc3-beae-46eb-910b-cb14df58f4e6",
+            "name": "Петрова Анна",
+            "dob": "2016-03-20",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Студия живописи с 4 лет и с 6 лет"
+            ],
+            "notes": "Очень творческая",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "4cd267b5-ede4-403e-b3d4-d77135fcd623",
+            "name": "Сидоров Артем",
+            "dob": "2014-11-05",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Программирование"
+            ],
+            "notes": "Хочет создать свою игру",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "1d3fdc4a-8b8e-45e1-aacd-90495e038248",
+            "name": "Козлова Вера",
+            "dob": "2017-06-10",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Танцевальная студия с 4 лет"
+            ],
+            "notes": "Активная и пластичная",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "9ceeb8d2-13e2-4eb5-892f-32a595d68a4f",
+            "name": "Морозов Дмитрий",
+            "dob": "2013-09-22",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Индивидуальные занятия по математике"
+            ],
+            "notes": "Нужна помощь по алгебре",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "74502edb-1185-416c-9c94-39e9cb3289f0",
+            "name": "Смирнова Екатерина",
+            "dob": "2015-02-28",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Вокальная студия с 5 лет"
+            ],
+            "notes": "Мечтает стать певицей",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "dd53d801-5e86-4a75-bcf0-e1226ab6eda3",
+            "name": "Волков Михаил",
+            "dob": "2016-07-01",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Лаборатория опытов с 6 лет"
+            ],
+            "notes": "Любознательный, задает много вопросов",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "1788a0dd-9b0f-4874-8bf3-456b05f4019b",
+            "name": "Лебедева София",
+            "dob": "2017-04-12",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Гончарная мастерская с 5 лет"
+            ],
+            "notes": "Нравится работать с глиной",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "bee5ff8b-67d9-4a2f-9320-48f58807afab",
+            "name": "Кузнецов Павел",
+            "dob": "2014-10-03",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Французский язык"
+            ],
+            "notes": "Планирует поездку во Францию",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "7e6b59e3-c9d2-4d7c-b8cc-9c15a03ceda8",
+            "name": "Попова Анастасия",
+            "dob": "2015-08-18",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Театральная студия с 5 лет"
+            ],
+            "notes": "Эмоциональная, любит выступать",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "91a00b2b-37f6-423d-8324-9ffed5c0e7f3",
+            "name": "Захаров Андрей",
+            "dob": "2016-01-25",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Шахматный клуб с 5 лет"
+            ],
+            "notes": "Стратег, хорошо играет",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "58495ee3-6244-4b36-92a2-e08662f4d67a",
+            "name": "Николаева Дарья",
+            "dob": "2017-05-30",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Подготовка к школе и ВПР"
+            ],
+            "notes": "Готовится к первому классу",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "56e0da93-85d2-4e63-95e8-7ca1c0403b82",
+            "name": "Федоров Георгий",
+            "dob": "2013-12-01",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Курс \"Пишу красиво\""
+            ],
+            "notes": "Хочет улучшить почерк",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "a2692532-67c4-4c6a-aca6-27e1f3c8ca19",
+            "name": "Сорокина Елизавета",
+            "dob": "2015-09-11",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Речевая студия \"Говоруша\" (5-7 лет)"
+            ],
+            "notes": "Нужно поработать над дикцией",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "f1fb80b8-7aa9-4d31-9d29-f7cfb76667c5",
+            "name": "Михайлов Игорь",
+            "dob": "2016-02-14",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Индивидуальные занятия по гитаре"
+            ],
+            "notes": "Мечтает играть рок",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "1d4f9671-3fb3-4d6c-b994-3dc202ec85c5",
+            "name": "Новикова Ульяна",
+            "dob": "2017-07-27",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Музыкальный ансамбль на разных инструментах"
+            ],
+            "notes": "Играет на флейте",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "387f4046-127b-4870-902b-c497c01f8e6b",
+            "name": "Григорьев Кирилл",
+            "dob": "2014-04-04",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Программирование"
+            ],
+            "notes": "Уже немного знаком с Python",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "d642b9b8-a1b3-4a84-b459-3e5383c71855",
+            "name": "Ершова Ксения",
+            "dob": "2015-10-21",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Студия живописи с 4 лет и с 6 лет"
+            ],
+            "notes": "Любит рисовать пейзажи",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "105cc639-9e81-4321-b652-96cb51def25d",
+            "name": "Орлов Роман",
+            "dob": "2016-08-09",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Лаборатория опытов с 6 лет"
+            ],
+            "notes": "Приносит свои вопросы для опытов",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "3f9742ed-6294-4f11-81d4-841ede4de17b",
+            "name": "Павлова Юлия",
+            "dob": "2017-03-03",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Танцевальная студия с 4 лет"
+            ],
+            "notes": "Энергичная, быстро схватывает движения",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "f848f381-4ef8-43f5-a4f9-8c170a428381",
+            "name": "Виноградов Максим",
+            "dob": "2013-11-19",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Индивидуальные занятия по русскому языку"
+            ],
+            "notes": "Готовится к ОГЭ",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "0b9d574b-04a1-4f21-b117-7725551760ad",
+            "name": "Степанова Алина",
+            "dob": "2015-06-08",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Вокальная студия с 5 лет"
+            ],
+            "notes": "Хороший слух",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "47893870-613f-48dc-bdd3-3d68d2ff258f",
+            "name": "Филиппов Борис",
+            "dob": "2016-09-29",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Гончарная мастерская с 5 лет"
+            ],
+            "notes": "Усидчивый, любит детали",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "6189fdbc-e8e1-4389-9eab-5fd07470b705",
+            "name": "Александрова Диана",
+            "dob": "2017-01-07",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Театральная студия с 5 лет"
+            ],
+            "notes": "Любит перевоплощаться",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "2ccc0b55-63f8-4cf2-a003-58daa1745bb2",
+            "name": "Белов Егор",
+            "dob": "2014-02-20",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Английский язык"
+            ],
+            "notes": "Смотрит мультики на английском",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "49d10c0d-b011-4b16-b6e7-0f48d9ed2348",
+            "name": "Галкина Надежда",
+            "dob": "2015-07-16",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Подготовка к школе и ВПР"
+            ],
+            "notes": "Нужна адаптация к школе",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "ce59ce6b-3d14-42f4-a935-a9f250cdf37d",
+            "name": "Добрынин Сергей",
+            "dob": "2016-10-02",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Логопедические занятия"
+            ],
+            "notes": "Проблемы с \"Р\"",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "0b8ffcb6-2e1e-4f4c-84a3-2cfd500f0b6b",
+            "name": "Егорова Татьяна",
+            "dob": "2017-04-25",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Курс \"Пишу красиво\""
+            ],
+            "notes": "Хочет писать аккуратно",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "3ab9f69c-80ce-4eea-9727-0096f819fbe0",
+            "name": "Жуков Владимир",
+            "dob": "2013-05-05",
+            "gender": "Мальчик",
+            "parent_id": null,
+            "directions": [
+                "Индивидуальные занятия по истории"
+            ],
+            "notes": "Интересуется древним миром",
+            "registration_date": "2025-08-02"
+        },
+        {
+            "id": "422969e5-17c3-41cb-a543-da0dd73eb118",
+            "name": "Зуева Ольга",
+            "dob": "2015-12-12",
+            "gender": "Девочка",
+            "parent_id": null,
+            "directions": [
+                "Музыкальный ансамбль на разных инструментах"
+            ],
+            "notes": "Играет на синтезаторе",
+            "registration_date": "2025-08-02"
+        }
+    ],
+    "teachers": [
+        {
+            "id": "0138ade6-d53a-4cf1-a991-d6fe190dd78c",
+            "name": "Филиппова Кристина Евгеньевна",
+            "phone": "89061727947",
+            "email": "kristina_lafe@mail.ru",
+            "directions": [
+                "Программирование",
+                "Вокальная студия с 5 лет",
+                "Театральная студия с 5 лет",
+                "Студия живописи с 4 лет и с 6 лет",
+                "Музыкальный ансамбль на разных инструментах",
+                "Индивидуальные занятия по гитаре",
+                "Индивидуальные занятия по математике"
+            ],
+            "notes": "ведет вк страницу",
+            "hire_date": "2025-08-02"
+        },
+        {
+            "id": "c13d7275-0cf0-46a7-b553-ed49eb7f3c18",
+            "name": "Сидорова Мария",
+            "phone": "89234567890",
+            "email": "sidorova@example.com",
+            "directions": [
+                "Английский язык"
+            ],
+            "notes": "Опыт работы с дошкольниками",
+            "hire_date": "2025-08-02"
+        }
+    ],
+    "payments": [
+        {
+            "id": "f6523d33-59c3-4d1b-bc58-db4969c0ae75",
+            "student_id": "f093edea-7e3d-4778-9cbe-7679ece56b22",
+            "date": "2025-08-02",
+            "amount": 1000.0,
+            "direction": "Французский язык",
+            "type": "Разовое",
+            "notes": ""
+        },
+        {
+            "id": "5b1d002a-c28f-44ef-9ae1-70862c567f82",
+            "student_id": "b67d0dc3-beae-46eb-910b-cb14df58f4e6",
+            "date": "2025-08-02",
+            "amount": 200.0,
+            "direction": "Английский язык",
+            "type": "Абонемент",
+            "notes": ""
+        }
+    ],
+    "schedule": [
+        {
+            "id": "1f5fed10-e86a-467d-82b4-335379dbca4c",
+            "direction": "Английский язык",
+            "teacher": "Филиппова Кристина Евгеньевна",
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "day": "Понедельник"
+        },
+        {
+            "id": "502eda91-6b6e-472f-9396-fbe5147153cd",
+            "direction": "Английский язык",
+            "teacher": "Филиппова Кристина Евгеньевна",
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "day": "Понедельник"
+        },
+        {
+            "id": "2d117299-193b-4410-a26a-5bd600746bae",
+            "direction": "Английский язык",
+            "teacher": "Сидорова Мария",
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "day": "Понедельник"
+        },
+        {
+            "id": "40f23b4f-009b-4d96-92ae-6aa60ae1561e",
+            "direction": "Программирование",
+            "teacher": "Петров Алексей",
+            "start_time": "14:00",
+            "end_time": "15:30",
+            "day": "Вторник"
+        },
+        {
+            "id": "733131a4-18b3-4f74-bed5-0eb98ba23531",
+            "direction": "Студия живописи с 4 лет и с 6 лет",
+            "teacher": "Иванова Елена",
+            "start_time": "16:00",
+            "end_time": "17:00",
+            "day": "Среда"
+        },
+        {
+            "id": "83575e82-7ffd-40bb-b89f-50b84b5ebce5",
+            "direction": "Шахматный клуб с 5 лет",
+            "teacher": "Кузнецов Олег",
+            "start_time": "17:30",
+            "end_time": "18:30",
+            "day": "Четверг"
+        },
+        {
+            "id": "c1de3711-17d3-43fa-9e8c-c88f8298031f",
+            "direction": "Вокальная студия с 5 лет",
+            "teacher": "Смирнова Анна",
+            "start_time": "11:00",
+            "end_time": "12:00",
+            "day": "Пятница"
+        },
+        {
+            "id": "1323aadb-f873-432a-aae4-77d788dc1d2d",
+            "direction": "Танцевальная студия с 4 лет",
+            "teacher": "Волков Денис",
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "day": "Суббота"
+        },
+        {
+            "id": "37a95ee5-38d6-4047-951b-0a73a304a2ee",
+            "direction": "Подготовка к школе и ВПР",
+            "teacher": "Козлова Ольга",
+            "start_time": "09:00",
+            "end_time": "10:30",
+            "day": "Воскресенье"
+        },
+        {
+            "id": "9fb557f6-d8e6-4cc3-b708-d5503186bf26",
+            "direction": "Программирование",
+            "teacher": "Филиппова Кристина Евгеньевна",
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "day": "Понедельник"
+        },
+        {
+            "id": "9960fde5-4836-41f5-87a9-6859c69d0939",
+            "direction": "Французский язык",
+            "teacher": "Сидорова Мария",
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "day": "Понедельник"
+        }
+    ],
+    "materials": [],
+    "kanban_tasks": {
+        "ToDo": [],
+        "InProgress": [],
+        "Done": []
+    },
+    "attendance": {
+        "2025-08-04": {
+            "1f5fed10-e86a-467d-82b4-335379dbca4c": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "502eda91-6b6e-472f-9396-fbe5147153cd": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "2d117299-193b-4410-a26a-5bd600746bae": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "9fb557f6-d8e6-4cc3-b708-d5503186bf26": {
+                "4cd267b5-ede4-403e-b3d4-d77135fcd623": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "387f4046-127b-4870-902b-c497c01f8e6b": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "9960fde5-4836-41f5-87a9-6859c69d0939": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": true,
+                    "paid": false,
+                    "note": ""
+                },
+                "bee5ff8b-67d9-4a2f-9320-48f58807afab": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            }
+        },
+        "2025-08-11": {
+            "1f5fed10-e86a-467d-82b4-335379dbca4c": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "502eda91-6b6e-472f-9396-fbe5147153cd": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "2d117299-193b-4410-a26a-5bd600746bae": {
+                "4a2cf7ce-d90a-4269-ac1e-b22dc20f0cfc": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "2ccc0b55-63f8-4cf2-a003-58daa1745bb2": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            },
+            "9fb557f6-d8e6-4cc3-b708-d5503186bf26": {
+                "4cd267b5-ede4-403e-b3d4-d77135fcd623": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "387f4046-127b-4870-902b-c497c01f8e6b": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            }
+        },
+        "2025-08-02": {
+            "1323aadb-f873-432a-aae4-77d788dc1d2d": {
+                "1d3fdc4a-8b8e-45e1-aacd-90495e038248": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "3f9742ed-6294-4f11-81d4-841ede4de17b": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            }
+        },
+        "2025-08-05": {
+            "40f23b4f-009b-4d96-92ae-6aa60ae1561e": {
+                "4cd267b5-ede4-403e-b3d4-d77135fcd623": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                },
+                "387f4046-127b-4870-902b-c497c01f8e6b": {
+                    "present": false,
+                    "paid": false,
+                    "note": ""
+                }
+            }
+        },
+        "2025-08-08": {
+            "c1de3711-17d3-43fa-9e8c-c88f8298031f": {
+                "74502edb-1185-416c-9c94-39e9cb3289f0": {
+                    "present": true,
+                    "paid": false,
+                    "note": ""
+                },
+                "0b9d574b-04a1-4f21-b117-7725551760ad": {
+                    "present": true,
+                    "paid": false,
+                    "note": ""
+                }
+            }
+        }
+    },
+    "parents": [
+        {
+            "id": "02e9901a-7e7c-48a5-bd40-1b7b482e6c59",
+            "name": "арина сергеевна",
+            "phone": "89061723456",
+            "children_ids": [
+                "f093edea-7e3d-4778-9cbe-7679ece56b22"
+            ]
+        }
+    ],
+    "settings": {
+        "trial_cost": 500,
+        "single_cost_multiplier": 1.5
+    },
+    "news": [
+        {
+            "id": "20573067-a051-43b0-9d3b-6bf1943a68ee",
+            "text": "Расписание!!!",
+            "date": "2025-08-02",
+            "author": "teacher",
+            "media": "20573067-a051-43b0-9d3b-6bf1943a68ee.png"
+        }
+    ]
+}
