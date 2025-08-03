@@ -29,7 +29,7 @@ USERS = {
     # Преподаватели (ограниченный доступ)
     "teacher": {
         "password": "teacher123",
-        "role": "teacher",
+        "role": "reception",
         "teacher_id": None
     },
     "kristina": {
