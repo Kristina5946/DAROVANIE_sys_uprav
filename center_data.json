@@ -1073,7 +1073,19 @@
             "day": "Пятница"
         }
     ],
-    "materials": [],
+    "materials": [
+        {
+            "id": "081dd327-51d1-42f1-a87f-8b56a313a0df",
+            "name": "Стразы",
+            "cost": 450.0,
+            "quantity": 1,
+            "total_cost": 450.0,
+            "direction": "Студия живописи с 4 лет и с 6 лет",
+            "date": "2025-08-03",
+            "supplier": "Вб",
+            "link": "Стразы для одежды и рукоделия холодной фиксации NADIA SHINE https://www.wildberries.ru/catalog/365773350/detail.aspx"
+        }
+    ],
     "kanban_tasks": {
         "ToDo": [],
         "InProgress": [],
@@ -1126,12 +1138,12 @@
             },
             "d27784bb-d507-4821-9144-a6735e6cf576": {
                 "1788a0dd-9b0f-4874-8bf3-456b05f4019b": {
-                    "present": false,
+                    "present": true,
                     "paid": false,
                     "note": ""
                 },
                 "47893870-613f-48dc-bdd3-3d68d2ff258f": {
-                    "present": false,
+                    "present": true,
                     "paid": false,
                     "note": ""
                 }

@@ -19,9 +19,66 @@ st.set_page_config(layout="wide", page_title="Детский центр - Упр
 
 # User authentication data (for a small, local app)
 USERS = {
-    "admin": {"password": "admin123", "role": "admin"},
-    "teacher": {"password": "teacher123", "role": "teacher"},
-    "reception": {"password": "reception123", "role": "reception"}
+    # Администратор (полный доступ)
+    "admin": {
+        "password": "admin123", 
+        "role": "admin",
+        "teacher_id": None
+    },
+    
+    # Преподаватели (ограниченный доступ)
+    "teacher": {
+        "password": "teacher123",
+        "role": "teacher",
+        "teacher_id": None
+    },
+    "kristina": {
+        "password": "kristina123",
+        "role": "teacher",
+        "teacher_id": "0138ade6-d53a-4cf1-a991-d6fe190dd78c"  # Филиппова Кристина Евгеньевна
+    },
+    "maria": {
+        "password": "maria123",
+        "role": "teacher",
+        "teacher_id": "c13d7275-0cf0-46a7-b553-ed49eb7f3c18"  # Сидорова Мария (английский)
+    },
+    "lusine": {
+        "password": "lusine123",
+        "role": "teacher",
+        "teacher_id": "af26a45e-2bfb-48f2-987c-94bf08da0a24"  # Лусине Арамовна Петросян
+    },
+    "oksana": {
+        "password": "oksana123",
+        "role": "teacher",
+        "teacher_id": "4e75e60a-c7b6-404f-9c55-5b7cf4982c8d"  # Оксана Викторовна Иванова
+    },
+    "ali": {
+        "password": "ali123",
+        "role": "teacher",
+        "teacher_id": "e9f70379-02f6-42d7-a4b4-31ce5bf4a840"  # Али Магомедович Каримов
+    },
+    "natalia_v": {
+        "password": "natalia123",
+        "role": "teacher",
+        "teacher_id": "17ecccaf-5300-4238-8728-21cbb78db67b"  # Гелунова Наталья Владимировна
+    },
+    "natalia_s": {
+        "password": "natalias123",
+        "role": "teacher",
+        "teacher_id": "47454a8d-fa51-4f64-aa30-79a5f1d1a476"  # Наталья Сергеевна Смирнова
+    },
+    "elena": {
+        "password": "elena123",
+        "role": "teacher",
+        "teacher_id": "92c00fb4-80a8-4d26-af5a-f9bb58218fea"  # Елена Александровна Ковалева
+    },
+    
+    # Ресепшен (специальная роль)
+    "reception": {
+        "password": "reception123",
+        "role": "reception",
+        "teacher_id": None
+    }
 }
 
 # Check if the data file exists, if not, create a new one with an empty structure
@@ -115,18 +172,45 @@ for var, default in session_vars.items():
 
 # --- Authentication Functions ---
 def login(username, password):
-    """Handles user login."""
+    """Handles user login with role-based permissions."""
     if username in USERS and USERS[username]['password'] == password:
         st.session_state.authenticated = True
         st.session_state.username = username
         st.session_state.role = USERS[username]['role']
+        st.session_state.teacher_id = USERS[username].get('teacher_id')
+        
         st.success(f"Добро пожаловать, {username}!")
         st.cache_data.clear()
-        st.session_state.page = 'home'  
+        st.session_state.page = 'home'
         st.rerun()
     else:
         st.error("Неверное имя пользователя или пароль.")
-
+def check_permission(allowed_roles=None, teacher_only=False):
+    """Decorator to check user permissions."""
+    if allowed_roles is None:
+        allowed_roles = ['admin']
+    
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            if not st.session_state.get('authenticated'):
+                st.warning("Доступ запрещен. Пожалуйста, войдите в систему.")
+                st.session_state.page = 'login'
+                st.rerun()
+                return
+            
+            if st.session_state.role not in allowed_roles:
+                st.error("У вас недостаточно прав для этого действия.")
+                return
+            
+            if teacher_only and st.session_state.teacher_id:
+                # Для преподавателей - проверяем, что они работают со своими данными
+                if 'teacher_id' in kwargs and kwargs['teacher_id'] != st.session_state.teacher_id:
+                    st.error("Вы можете просматривать только свои данные.")
+                    return
+            
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 def logout():
     """Handles user logout."""
     st.session_state.authenticated = False
@@ -1984,15 +2068,19 @@ else:
         
     elif st.session_state.role == 'teacher':
         st.sidebar.button("🏠 Главная", on_click=lambda: _navigate_to('home'))
-        st.sidebar.button("📅 Расписание и посещения", on_click=lambda: _navigate_to('schedule'))
-        st.sidebar.button("👦 Мои ученики", on_click=lambda: _navigate_to('students'))
-        st.sidebar.button("📌 Мои задачи", on_click=lambda: _navigate_to('kanban'))
+        st.sidebar.button("👩‍🏫 Преподаватели", on_click=lambda: _navigate_to('teachers'))
+        st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
+        st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
+        st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
     
     elif st.session_state.role == 'reception':
         st.sidebar.button("🏠 Главная", on_click=lambda: _navigate_to('home'))
+        st.sidebar.button("🎨 Направления", on_click=lambda: _navigate_to('directions'))
+        st.sidebar.button("👦 Ученики и оплаты", on_click=lambda: _navigate_to('students'))
+        st.sidebar.button("📅 Расписание и посещения", on_click=lambda: _navigate_to('schedule'))
+        st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
+        st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
         st.sidebar.button("👋 Помощник ресепшена", on_click=lambda: _navigate_to('reception_helper'))
-        st.sidebar.button("👦 Ученики", on_click=lambda: _navigate_to('students'))
-        st.sidebar.button("📅 Расписание", on_click=lambda: _navigate_to('schedule'))
     
     st.sidebar.markdown("---")
     st.sidebar.text(f"👤 {st.session_state.username} ({st.session_state.role})")
