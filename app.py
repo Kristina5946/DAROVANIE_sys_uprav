@@ -103,6 +103,7 @@ if not os.path.exists(DATA_FILE):
             'trial_cost': 500,
             'single_cost_multiplier': 1.5
         }
+                
     }
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(initial_data, f, ensure_ascii=False, indent=4)
@@ -1940,96 +1941,561 @@ def show_reception_helper():
     """Page for reception helper to suggest directions."""
     st.header("👋 Помощник ресепшена")
     
-    # Создаем словарь категорий направлений
-    direction_categories = {
-        "Языки": ["Английский язык", "Французский язык"],
-        "Творчество": [
-            "Студия живописи с 4 лет и с 6 лет", 
-            "Гончарная мастерская с 5 лет",
-            "Театральная студия с 5 лет"
-        ],
-        "Музыка": [
-            "Вокальная студия с 5 лет",
-            "Музыкальный ансамбль на разных инструментах",
-            "Индивидуальные занятия по гитаре"
-        ],
-        "Танцы": ["Танцевальная студия с 4 лет"],
-        "Наука": [
-            "Программирование", 
-            "Лаборатория опытов с 6 лет",
-            "Индивидуальные занятия по математике"
-        ],
-        "Подготовка к школе": [
-            "Подготовка к школе и ВПР", 
-            "Курс \"Пишу красиво\"",
-            "Речевая студия \"Говоруша\" (5-7 лет)"
-        ],
-        "Логопедия": ["Логопедические занятия"],
-        "Шахматы": ["Шахматный клуб с 5 лет"],
-        "Репетиторство": [
-            "Индивидуальные занятия по истории",
-            "Индивидуальные занятия по обществознанию",
-            "Индивидуальные занятия по русскому языку"
-        ]
-    }
-    
-    with st.form("child_info_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            child_age = st.number_input("Возраст ребенка", min_value=0, max_value=18, value=5)
-            gender = st.selectbox("Пол ребенка", ["Мальчик", "Девочка", "Не важно"])
-        with col2:
-            interests = st.multiselect(
-                "Интересы (опционально)",
-                list(direction_categories.keys())
-            )
+     # Создаем вкладки
+    tab1, tab2, tab3 = st.tabs(["Подбор направлений", "Перенос занятий", "Запись на занятия"])
+
+    with tab1:
+        # Создаем словарь категорий направлений
+        direction_categories = {
+            "Языки": ["Английский язык", "Французский язык"],
+            "Творчество": [
+                "Студия живописи с 4 лет и с 6 лет", 
+                "Гончарная мастерская с 5 лет",
+                "Театральная студия с 5 лет"
+            ],
+            "Музыка": [
+                "Вокальная студия с 5 лет",
+                "Музыкальный ансамбль на разных инструментах",
+                "Индивидуальные занятия по гитаре"
+            ],
+            "Танцы": ["Танцевальная студия с 4 лет"],
+            "Наука": [
+                "Программирование", 
+                "Лаборатория опытов с 6 лет",
+                "Индивидуальные занятия по математике"
+            ],
+            "Подготовка к школе": [
+                "Подготовка к школе и ВПР", 
+                "Курс \"Пишу красиво\"",
+                "Речевая студия \"Говоруша\" (5-7 лет)"
+            ],
+            "Логопедия": ["Логопедические занятия"],
+            "Шахматы": ["Шахматный клуб с 5 лет"],
+            "Репетиторство": [
+                "Индивидуальные занятия по истории",
+                "Индивидуальные занятия по обществознанию",
+                "Индивидуальные занятия по русскому языку"
+            ]
+        }
         
-        if st.form_submit_button("Подобрать направления"):
-            # Сначала фильтруем по возрасту и полу
-            suitable_directions = suggest_directions(child_age, gender if gender != "Не важно" else None)
+        with st.form("child_info_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                child_age = st.number_input("Возраст ребенка", min_value=0, max_value=18, value=5)
+                gender = st.selectbox("Пол ребенка", ["Мальчик", "Девочка", "Не важно"])
+            with col2:
+                interests = st.multiselect(
+                    "Интересы (опционально)",
+                    list(direction_categories.keys())
+                )
             
-            # Если выбраны интересы, фильтруем по категориям
-            if interests:
-                # Получаем все направления из выбранных категорий
-                interested_directions = []
-                for interest in interests:
-                    interested_directions.extend(direction_categories.get(interest, []))
+            if st.form_submit_button("Подобрать направления"):
+                # Сначала фильтруем по возрасту и полу
+                suitable_directions = suggest_directions(child_age, gender if gender != "Не важно" else None)
                 
-                # Фильтруем подходящие направления по выбранным категориям
-                suitable_directions = [
-                    d for d in suitable_directions 
-                    if d['name'] in interested_directions
-                ]
+                # Если выбраны интересы, фильтруем по категориям
+                if interests:
+                    # Получаем все направления из выбранных категорий
+                    interested_directions = []
+                    for interest in interests:
+                        interested_directions.extend(direction_categories.get(interest, []))
+                    
+                    # Фильтруем подходящие направления по выбранным категориям
+                    suitable_directions = [
+                        d for d in suitable_directions 
+                        if d['name'] in interested_directions
+                    ]
+                
+                if suitable_directions:
+                    st.success(f"Найдено {len(suitable_directions)} подходящих направлений:")
+                    
+                    # Группируем направления по категориям для удобного отображения
+                    categorized = defaultdict(list)
+                    for direction in suitable_directions:
+                        for category, dirs in direction_categories.items():
+                            if direction['name'] in dirs:
+                                categorized[category].append(direction)
+                                break
+                        else:
+                            categorized["Другие"].append(direction)
+                    
+                    # Выводим направления по категориям
+                    for category, directions in categorized.items():
+                        with st.expander(f"**{category}** ({len(directions)} направлений)"):
+                            cols = st.columns(2)
+                            for i, direction in enumerate(directions):
+                                with cols[i % 2]:
+                                    with st.container(border=True):
+                                        st.subheader(direction['name'])
+                                        st.write(f"**Возраст:** {direction.get('min_age', '?')}-{direction.get('max_age', '?')} лет")
+                                        st.write(f"**Абонемент:** {direction['cost']} руб.")
+                                        st.write(f"**Пробное занятие:** {direction.get('trial_cost', '?')} руб.")
+                                        
+                                        if direction.get('description'):
+                                            st.caption(direction['description'])
+                else:
+                    st.info("К сожалению, нет подходящих направлений для указанных параметров.")
+    with tab2:
+        st.subheader("🔄 Перенос занятий")
+        
+        # 1. Выбор занятия для переноса
+        current_schedule = st.session_state.data['schedule']
+        if not current_schedule:
+            st.info("Нет занятий для переноса.")
+            return
             
-            if suitable_directions:
-                st.success(f"Найдено {len(suitable_directions)} подходящих направлений:")
-                
-                # Группируем направления по категориям для удобного отображения
-                categorized = defaultdict(list)
-                for direction in suitable_directions:
-                    for category, dirs in direction_categories.items():
-                        if direction['name'] in dirs:
-                            categorized[category].append(direction)
-                            break
-                    else:
-                        categorized["Другие"].append(direction)
-                
-                # Выводим направления по категориям
-                for category, directions in categorized.items():
-                    with st.expander(f"**{category}** ({len(directions)} направлений)"):
-                        cols = st.columns(2)
-                        for i, direction in enumerate(directions):
-                            with cols[i % 2]:
-                                with st.container(border=True):
-                                    st.subheader(direction['name'])
-                                    st.write(f"**Возраст:** {direction.get('min_age', '?')}-{direction.get('max_age', '?')} лет")
-                                    st.write(f"**Абонемент:** {direction['cost']} руб.")
-                                    st.write(f"**Пробное занятие:** {direction.get('trial_cost', '?')} руб.")
-                                    
-                                    if direction.get('description'):
-                                        st.caption(direction['description'])
+        # Фильтр по дате (последние 7 дней)
+        today = date.today()
+        week_ago = today - timedelta(days=7)
+        
+        # Получаем список пропущенных занятий (из attendance)
+        missed_lessons = []
+        attendance = st.session_state.data.get('attendance', {})
+        
+        for date_str, lessons in attendance.items():
+            lesson_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if week_ago <= lesson_date <= today:
+                for lesson_id, students in lessons.items():
+                    present_count = sum(1 for s in students.values() if s.get('present'))
+                    if present_count == 0:  # Никто не пришел
+                        lesson = next((l for l in current_schedule if l['id'] == lesson_id), None)
+                        if lesson:
+                            missed_lessons.append({
+                                'date': date_str,
+                                'lesson': lesson,
+                                'students': [s for s in students.keys()]
+                            })
+        
+        if not missed_lessons:
+            st.info("Нет пропущенных занятий за последнюю неделю.")
+            return
+            
+        # Выбор занятия для переноса
+        lesson_options = {
+            f"{ml['lesson']['direction']} ({ml['date']}, {ml['lesson']['teacher']})": ml 
+            for ml in missed_lessons
+        }
+        selected_lesson = st.selectbox(
+            "Выберите занятие для переноса",
+            options=list(lesson_options.keys())
+        )
+        lesson_data = lesson_options[selected_lesson]
+        
+        # 2. Поиск свободных окон
+        st.subheader("🔍 Поиск свободных окон")
+        
+        # Получаем информацию о классе для этого направления
+        direction = next(
+            (d for d in st.session_state.data['directions'] 
+             if d['name'] == lesson_data['lesson']['direction']),
+            None
+        )
+        
+        if not direction:
+            st.error("Направление не найдено!")
+            return
+            
+        # Определяем подходящий класс
+        classrooms = st.session_state.data.get('classrooms', [])
+        suitable_classroom = None
+        for room in classrooms:
+            if lesson_data['lesson']['direction'] in room['directions']:
+                suitable_classroom = room
+                break
+        else:
+            # Если направление не привязано к конкретному классу, выбираем по количеству учеников
+            students_count = len(lesson_data['students'])
+            if students_count <= 6:
+                suitable_classroom = next((r for r in classrooms if r['name'] == 'Малый класс'), None)
             else:
-                st.info("К сожалению, нет подходящих направлений для указанных параметров.")
+                suitable_classroom = next((r for r in classrooms if r['name'] == 'Большой класс'), None)
+        
+        if not suitable_classroom:
+            st.error("Не удалось определить подходящий класс!")
+            return
+            
+        st.write(f"**Подходящий класс:** {suitable_classroom['name']}")
+        
+        # 3. Поиск свободных окон у преподавателя
+        teacher = next(
+            (t for t in st.session_state.data['teachers'] 
+             if t['name'] == lesson_data['lesson']['teacher']),
+            None
+        )
+        
+        if not teacher:
+            st.error("Преподаватель не найден!")
+            return
+            
+        # Получаем текущее расписание преподавателя
+        teacher_schedule = [
+            l for l in current_schedule 
+            if l['teacher'] == teacher['name']
+        ]
+        
+        # Предлагаем дни для переноса (следующие 7 дней)
+        possible_days = []
+        for i in range(1, 8):
+            new_date = today + timedelta(days=i)
+            day_name = new_date.strftime("%A")
+            russian_day = {
+                "Monday": "Понедельник",
+                "Tuesday": "Вторник",
+                "Wednesday": "Среда",
+                "Thursday": "Четверг",
+                "Friday": "Пятница",
+                "Saturday": "Суббота",
+                "Sunday": "Воскресенье"
+            }.get(day_name, day_name)
+            
+            # Проверяем, есть ли у преподавателя занятия в этот день
+            teacher_busy = any(
+                l['day'] == russian_day 
+                for l in teacher_schedule
+            )
+            
+            if not teacher_busy:
+                possible_days.append({
+                    'date': new_date,
+                    'day_name': russian_day
+                })
+        
+        if not possible_days:
+            st.warning("У преподавателя нет свободных дней в ближайшую неделю.")
+            return
+            
+        # 4. Выбор времени
+        selected_day = st.selectbox(
+            "Выберите день",
+            options=[f"{d['day_name']} ({d['date'].strftime('%d.%m.%Y')}" for d in possible_days],
+            format_func=lambda x: x
+        )
+        
+        # Получаем выбранный день
+        selected_day_data = possible_days[[
+            f"{d['day_name']} ({d['date'].strftime('%d.%m.%Y')}" 
+            for d in possible_days
+        ].index(selected_day)]
+        
+        # Предлагаем временные слоты
+        time_slots = [
+            "09:00", "10:00", "11:00", "12:00", "13:00", 
+            "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
+        ]
+        
+        # Фильтруем слоты, которые уже заняты в выбранном классе
+        occupied_slots = []
+        for lesson in current_schedule:
+            if lesson['day'] == selected_day_data['day_name']:
+                # Проверяем, есть ли у занятия указанный класс
+                if 'classroom' in lesson and lesson['classroom'] == suitable_classroom['id']:
+                    occupied_slots.append((lesson['start_time'], lesson['end_time']))
+        
+        available_slots = []
+        for slot in time_slots:
+            slot_start = datetime.strptime(slot, "%H:%M").time()
+            slot_end = (datetime.strptime(slot, "%H:%M") + timedelta(minutes=45)).time()
+            
+            # Проверяем, не пересекается ли слот с занятыми
+            conflict = False
+            for occupied_start, occupied_end in occupied_slots:
+                occ_start = datetime.strptime(occupied_start, "%H:%M").time()
+                occ_end = datetime.strptime(occupied_end, "%H:%M").time()
+                
+                if not (slot_end <= occ_start or slot_start >= occ_end):
+                    conflict = True
+                    break
+            
+            if not conflict:
+                available_slots.append(slot)
+        
+        if not available_slots:
+            st.warning("Нет свободных временных слотов в выбранный день.")
+            return
+            
+        selected_time = st.selectbox("Выберите время", options=available_slots)
+        
+        # 5. Подтверждение и сохранение
+        if st.button("Перенести занятие"):
+            # Создаем новое занятие в расписании
+            new_lesson = {
+                'id': str(uuid.uuid4()),
+                'direction': lesson_data['lesson']['direction'],
+                'teacher': lesson_data['lesson']['teacher'],
+                'start_time': selected_time,
+                'end_time': (datetime.strptime(selected_time, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M"),
+                'day': selected_day_data['day_name'],
+                'classroom': suitable_classroom['id'],
+                'rescheduled_from': lesson_data['lesson']['id']
+            }
+            
+            st.session_state.data['schedule'].append(new_lesson)
+            
+            # Обновляем посещения (отмечаем как перенесенные)
+            date_key = lesson_data['date']
+            lesson_id = lesson_data['lesson']['id']
+            
+            if date_key in st.session_state.data['attendance']:
+                if lesson_id in st.session_state.data['attendance'][date_key]:
+                    for student_id in st.session_state.data['attendance'][date_key][lesson_id]:
+                        st.session_state.data['attendance'][date_key][lesson_id][student_id]['note'] = \
+                            f"Перенесено на {selected_day_data['day_name']} {selected_time}"
+            
+            save_data(st.session_state.data)
+            st.success("Занятие успешно перенесено!")
+            st.rerun()
+    # Новая вкладка 3 - Запись на занятия
+    with tab3:
+        st.subheader("📝 Запись на индивидуальные занятия")
+        
+        # 1. Выбор ученика
+        students = st.session_state.data.get('students', [])
+        if not students:
+            st.warning("Внимание: Нет учеников в базе данных. Добавьте учеников, чтобы записать их на занятия.")
+            return # Прерывает выполнение, если нет учеников
+
+        student_options = {s['id']: s['name'] for s in students}
+        selected_student_id = st.selectbox(
+            "Выберите ученика",
+            options=list(student_options.keys()),
+            format_func=lambda x: student_options[x],
+            key="enroll_student_select"
+        )
+
+        # 2. Выбор направления (только индивидуальные)
+        directions_data = st.session_state.data.get('directions', [])
+        individual_directions = [
+            d for d in directions_data
+            if d and "Индивидуальные занятия" in d.get('name', '')
+        ]
+
+        if not individual_directions:
+            st.warning("Внимание: Нет индивидуальных направлений в базе данных. Создайте их в разделе 'Направления'.")
+            return # Прерывает выполнение, если нет индивидуальных направлений
+
+        direction_options = {d['id']: d['name'] for d in individual_directions}
+        selected_direction_id = st.selectbox(
+            "Выберите направление (только индивидуальные)",
+            options=list(direction_options.keys()),
+            format_func=lambda x: direction_options[x],
+            key="enroll_direction_select"
+        )
+        selected_direction = next((d for d in individual_directions if d['id'] == selected_direction_id), None)
+
+        if not selected_direction:
+            st.error("Ошибка: Выбранное направление не найдено. Проверьте данные.")
+            return # Прерывает выполнение, если направление не найдено
+
+        # 3. Выбор преподавателя
+        teachers_data = st.session_state.data.get('teachers', [])
+        teachers_for_direction = [
+            t for t in teachers_data
+            if t and selected_direction['name'] in t.get('directions', [])
+        ]
+
+        if not teachers_for_direction:
+            st.error(f"Ошибка: Нет преподавателей для выбранного направления '{selected_direction['name']}'. Добавьте их в разделе 'Преподаватели'.")
+            return # Прерывает выполнение, если нет преподавателей для направления
+
+        teacher_options = {t['id']: t['name'] for t in teachers_for_direction}
+        selected_teacher_id = st.selectbox(
+            "Выберите преподавателя",
+            options=list(teacher_options.keys()),
+            format_func=lambda x: teacher_options[x],
+            key="enroll_teacher_select"
+        )
+        selected_teacher = next((t for t in teachers_for_direction if t['id'] == selected_teacher_id), None)
+
+        if not selected_teacher:
+            st.error("Ошибка: Выбранный преподаватель не найден. Проверьте данные.")
+            return # Прерывает выполнение, если преподаватель не найден
+
+        # 4. Поиск свободных окон
+        st.subheader("🔍 Поиск свободных окон")
+
+        # Определяем подходящий класс
+        suitable_classroom = None
+        classrooms = st.session_state.data.get('classrooms', [])
+
+        for room in classrooms:
+            if room and selected_direction['name'] in room.get('directions', []):
+                suitable_classroom = room
+                break
+        else:
+            # Если направление не привязано к конкретному классу, выбираем Малый класс по умолчанию
+            suitable_classroom = next(
+                (r for r in classrooms if r and r.get('name') == 'Малый класс'),
+                None
+            )
+
+        if not suitable_classroom:
+            st.error("Ошибка: Не удалось определить подходящий класс для этого направления. Проверьте классы и их привязки.")
+            return # Прерывает выполнение, если класс не найден
+
+        st.write(f"**Предлагаемый класс:** {suitable_classroom.get('name', 'Неизвестно')}")
+
+        # Календарь для выбора даты
+        selected_date = st.date_input(
+            "Выберите дату занятия",
+            min_value=date.today(),
+            max_value=date.today() + timedelta(days=90), # Можно увеличить диапазон
+            key="enroll_date_select"
+        )
+
+        # Преобразуем дату в день недели
+        day_name = selected_date.strftime("%A")
+        russian_day = {
+            "Monday": "Понедельник", "Tuesday": "Вторник", "Wednesday": "Среда",
+            "Thursday": "Четверг", "Friday": "Пятница", "Saturday": "Суббота", "Sunday": "Воскресенье"
+        }.get(day_name, day_name)
+
+        # Проверяем расписание преподавателя
+        all_schedule = st.session_state.data.get('schedule', [])
+        teacher_schedule = [
+            l for l in all_schedule
+            if l and l.get('teacher') == selected_teacher.get('name')
+            and l.get('day') == russian_day
+        ]
+
+        # Проверка загруженности преподавателя
+        max_lessons_per_day = 6 # Пример, можно настроить
+        if len(teacher_schedule) >= max_lessons_per_day:
+            st.warning(f"Внимание: Преподаватель '{selected_teacher.get('name')}' уже имеет {len(teacher_schedule)} занятий в {russian_day} (максимум {max_lessons_per_day}).")
+            # НЕ return здесь, чтобы показать занятость класса
+            # return
+
+        # Проверяем занятость класса
+        classroom_schedule = [
+            l for l in all_schedule
+            if l and l.get('classroom') == suitable_classroom.get('id')
+            and l.get('day') == russian_day
+        ]
+
+        # Визуализация занятости
+        st.subheader(f"📅 Занятость {russian_day} ({selected_date.strftime('%d.%m.%Y')})")
+
+        # Создаем временную шкалу (9:00-20:00 с шагом 15 минут)
+        time_slots_full = [f"{h:02d}:{m:02d}" for h in range(9, 20) for m in [0, 15, 30, 45]]
+
+        schedule_df = pd.DataFrame(index=time_slots_full)
+        schedule_df['Преподаватель'] = "Свободно"
+        schedule_df['Класс'] = "Свободно"
+
+        # Заполняем занятые слоты преподавателя
+        for lesson in teacher_schedule:
+            try:
+                start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
+                end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
+                for slot_str in time_slots_full:
+                    slot_dt = datetime.strptime(slot_str, "%H:%M")
+                    slot_start_time = slot_dt.time()
+                    slot_end_time = (slot_dt + timedelta(minutes=45)).time() # Предполагаем 45-минутные занятия
+
+                    # Проверяем пересечение временных интервалов
+                    if not (slot_end_time <= start or slot_start_time >= end):
+                        schedule_df.at[slot_str, 'Преподаватель'] = f"{lesson.get('direction', 'Занятие')} (занят)"
+            except ValueError:
+                st.warning(f"Некорректный формат времени в расписании преподавателя: {lesson.get('start_time')}-{lesson.get('end_time')}")
+                continue
+            except KeyError:
+                st.warning(f"Отсутствуют ключи времени в расписании преподавателя: {lesson}")
+                continue
+
+        # Заполняем занятые слоты класса
+        for lesson in classroom_schedule:
+            try:
+                start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
+                end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
+                for slot_str in time_slots_full:
+                    slot_dt = datetime.strptime(slot_str, "%H:%M")
+                    slot_start_time = slot_dt.time()
+                    slot_end_time = (slot_dt + timedelta(minutes=45)).time() # Предполагаем 45-минутные занятия
+
+                    # Проверяем пересечение временных интервалов
+                    if not (slot_end_time <= start or slot_start_time >= end):
+                        schedule_df.at[slot_str, 'Класс'] = f"{lesson.get('direction', 'Занято')} (занят)"
+            except ValueError:
+                st.warning(f"Некорректный формат времени в расписании класса: {lesson.get('start_time')}-{lesson.get('end_time')}")
+                continue
+            except KeyError:
+                st.warning(f"Отсутствуют ключи времени в расписании класса: {lesson}")
+                continue
+
+        # Отображаем таблицу занятости
+        st.dataframe(schedule_df, use_container_width=True)
+
+        # 5. Выбор свободного времени
+        available_slots = []
+        for slot_str in time_slots_full:
+            try:
+                slot_dt = datetime.strptime(slot_str, "%H:%M")
+                slot_start_time = slot_dt.time()
+                slot_end_time = (slot_dt + timedelta(minutes=45)).time()
+
+                teacher_free = True
+                for lesson in teacher_schedule:
+                    lesson_start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
+                    lesson_end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
+                    if not (slot_end_time <= lesson_start or slot_start_time >= lesson_end):
+                        teacher_free = False
+                        break
+
+                classroom_free = True
+                for lesson in classroom_schedule:
+                    lesson_start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
+                    lesson_end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
+                    if not (slot_end_time <= lesson_start or slot_start_time >= lesson_end):
+                        classroom_free = False
+                        break
+
+                if teacher_free and classroom_free:
+                    available_slots.append(slot_str)
+            except ValueError:
+                # Пропускаем слоты с некорректным временем
+                continue
+
+        if not available_slots:
+            st.info("Информация: Нет доступных свободных окон для записи на занятие в выбранный день с учетом занятости преподавателя и класса. Попробуйте другую дату или преподавателя.")
+            # НЕ return здесь, чтобы пользователь мог изменить ввод
+            # return
+
+        selected_time = st.selectbox("Выберите доступное время для занятия", options=available_slots, key="enroll_time_select")
+
+        # 6. Подтверждение и сохранение
+        if st.button("Записать на занятие", key="enroll_lesson_button"):
+            if not selected_time:
+                st.warning("Пожалуйста, выберите время для записи на занятие.")
+            else:
+                # Создаем новое занятие
+                new_lesson = {
+                    'id': str(uuid.uuid4()),
+                    'direction': selected_direction['name'],
+                    'teacher': selected_teacher['name'],
+                    'start_time': selected_time,
+                    'end_time': (datetime.strptime(selected_time, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M"),
+                    'day': russian_day,
+                    'classroom': suitable_classroom['id'],
+                    'student_id': selected_student_id,
+                    'is_individual': True # Отмечаем, что это индивидуальное занятие
+                }
+
+                # Добавляем в расписание
+                if 'schedule' not in st.session_state.data:
+                    st.session_state.data['schedule'] = []
+                st.session_state.data['schedule'].append(new_lesson)
+
+                # Добавляем направление ученику, если его еще нет
+                student = next((s for s in students if s.get('id') == selected_student_id), None)
+                if student:
+                    if 'directions' not in student:
+                        student['directions'] = []
+                    if selected_direction['name'] not in student['directions']:
+                        student['directions'].append(selected_direction['name'])
+
+                save_data(st.session_state.data) # Убедитесь, что save_data определена
+                st.success("Ученик успешно записан на занятие!")
+                st.rerun() # Перезагрузка страницы для отображения изменений
+        
 # --- Main App Title and Navigation ---
 st.title("🏫 Система управления детским центром")
 
@@ -2108,7 +2574,33 @@ else:
                     'materials': [],
                     'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
                     'attendance': {},
-                    'settings': {'trial_cost': 500, 'single_cost_multiplier': 1.5}
+                    'settings': {'trial_cost': 500, 'single_cost_multiplier': 1.5},
+                    'classrooms': [
+                                    {
+                                        'id': 'classroom_1',
+                                        'name': 'Танцзал',
+                                        'capacity': 15,
+                                        'directions': [
+                                            "Вокальная студия с 5 лет",
+                                            "Танцевальная студия с 4 лет",
+                                            "Танцевальная студия с 7 лет",
+                                            "Музыкальный ансамбль на разных инструментах",
+                                            "Индивидуальные занятия по гитаре"
+                                        ]
+                                    },
+                                    {
+                                        'id': 'classroom_2',
+                                        'name': 'Большой класс',
+                                        'capacity': 10,
+                                        'directions': []  # Все остальные направления
+                                    },
+                                    {
+                                        'id': 'classroom_3',
+                                        'name': 'Малый класс',
+                                        'capacity': 6,
+                                        'directions': []
+                                    }
+                                ]
                 }
                 save_data(initial_data)
                 st.session_state.data = load_data()
