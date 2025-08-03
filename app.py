@@ -337,15 +337,18 @@ def show_home_page():
     
     if st.button("Сгенерировать сообщение"):
         lessons_today = [l for l in st.session_state.data['schedule'] if l['day'] == selected_day]
+        if st.session_state.role == 'teacher':
+            teacher = get_teacher_by_id(st.session_state.teacher_id)
+            if teacher:
+                lessons_today = [l for l in lessons_today if l.get('teacher') == teacher.get('name')]
+
         if lessons_today:
             message = f"Доброе утро!{selected_sticker}\nПриглашаем сегодня на занятия:\n"
             
             lessons_today.sort(key=lambda x: x['start_time'])
             for lesson in lessons_today:
-                age_info = next((d['min_age'] for d in st.session_state.data['directions'] 
-                               if d['name'] == lesson['direction']), None)
-                age_text = f" (с {age_info} лет)" if age_info else ""
-                message += f"{lesson['start_time']} - {lesson['direction']}{age_text}\n"
+                # Removed age_text as it's often included in direction name already
+                message += f"{lesson['start_time']} - {lesson['direction']}\n" 
             
             st.text_area("Сообщение для WhatsApp", message, height=200)
             
