@@ -32,6 +32,11 @@ USERS = {
         "role": "reception",
         "teacher_id": None
     },
+    "Eseniya": {
+        "password": "Eseniya123",
+        "role": "teacher",
+        "teacher_id": None
+    },
     "kristina": {
         "password": "kristina123",
         "role": "teacher",
