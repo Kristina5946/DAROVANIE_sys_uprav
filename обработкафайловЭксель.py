@@ -82,19 +82,46 @@ class EducationCenterApp(QMainWindow):
         self.csv_tab = QWidget()
         self.csv_layout = QVBoxLayout()
         
-        self.csv_label = QLabel("Обработка CSV файлов:")
+        self.csv_label = QLabel("Обработка файлов:")
         self.csv_layout.addWidget(self.csv_label)
         
-        self.csv_button = QPushButton("Загрузить CSV файл")
+        # Кнопка для загрузки и сохранения CSV -> Excel
+        self.csv_button = QPushButton("Загрузить CSV файл (для экспорта в Excel)")
         self.csv_button.clicked.connect(self.load_csv)
         self.csv_layout.addWidget(self.csv_button)
+
+        # Кнопка для конвертации Excel -> CSV (новая функция)
+        self.excel_to_csv_button = QPushButton("Конвертировать Excel в CSV")
+        self.excel_to_csv_button.clicked.connect(self.convert_excel_to_csv)
+        self.csv_layout.addWidget(self.excel_to_csv_button)
         
         self.csv_text = QTextEdit()
         self.csv_text.setReadOnly(True)
         self.csv_layout.addWidget(self.csv_text)
         
         self.csv_tab.setLayout(self.csv_layout)
-        self.tabs.addTab(self.csv_tab, "Обработка CSV")
+        self.tabs.addTab(self.csv_tab, "Обработка файлов")
+
+    def convert_excel_to_csv(self):
+        """Конвертирует файл Excel в CSV."""
+        excel_file_path, _ = QFileDialog.getOpenFileName(self, "Открыть Excel файл", "", "Excel Files (*.xlsx)")
+        if not excel_file_path:
+            return
+
+        try:
+            self.csv_text.append(f"Загрузка файла Excel: {excel_file_path}")
+            df = pd.read_excel(excel_file_path)
+            self.csv_text.append(f"Файл Excel успешно прочитан. Найдено {len(df)} записей.")
+
+            csv_save_path, _ = QFileDialog.getSaveFileName(self, "Сохранить CSV файл", "", "CSV Files (*.csv)")
+            if csv_save_path:
+                df.to_csv(csv_save_path, index=False, encoding='utf-8')
+                self.csv_text.append(f"Файл успешно сохранен как: {csv_save_path}")
+            else:
+                self.csv_text.append("Сохранение отменено.")
+
+        except Exception as e:
+            self.csv_text.append(f"Ошибка при конвертации: {str(e)}")
     
     def create_salary_tab(self):
         """Вкладка для расчета зарплаты"""
