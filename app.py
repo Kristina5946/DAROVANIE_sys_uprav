@@ -1686,23 +1686,54 @@ def show_bulk_upload_page():
                             st.success(f"Добавлено {len(new_directions)} направлений!")
                     
                     elif data_type == "Ученики":
-                        required_cols = ['name', 'dob']
+                        required_cols = ['name', 'dob', 'gender']
                         if all(col in df.columns for col in required_cols):
                             new_students = []
                             for _, row in df.iterrows():
+                                # Обработка родителя
+                                parent_id = None
+                                if 'parent_id' in row and pd.notna(row['parent_id']):
+                                    parent_id = row['parent_id']
+                                elif 'parent_name' in row and pd.notna(row['parent_name']):
+                                    # Ищем существующего родителя или создаем нового
+                                    parent_phone = str(row['parent_phone']) if 'parent_phone' in row else ''
+                                    existing_parent = next(
+                                        (p for p in st.session_state.data['parents'] 
+                                        if p['name'] == row['parent_name'] and 
+                                            (not parent_phone or p['phone'] == parent_phone)),
+                                        None
+                                    )
+                                    if existing_parent:
+                                        parent_id = existing_parent['id']
+                                    else:
+                                        new_parent = {
+                                            'id': str(uuid.uuid4()),
+                                            'name': row['parent_name'],
+                                            'phone': parent_phone,
+                                            'children_ids': []
+                                        }
+                                        st.session_state.data['parents'].append(new_parent)
+                                        parent_id = new_parent['id']
+                                
+                                # Обработка направлений
+                                directions = []
+                                if 'directions' in row and pd.notna(row['directions']):
+                                    directions = [d.strip() for d in str(row['directions']).split(',')]
+                                
                                 new_student = {
                                     'id': str(uuid.uuid4()),
                                     'name': row['name'],
                                     'dob': row['dob'],
-                                    'gender': row.get('gender', 'Мальчик'),
-                                    'parent_id': None,  # Will need to handle parents separately
-                                    'directions': row.get('directions', '').split(',') if pd.notna(row.get('directions')) else [],
+                                    'gender': row['gender'],
+                                    'parent_id': parent_id,
+                                    'directions': directions,
                                     'notes': row.get('notes', ''),
-                                    'registration_date': str(date.today())
+                                    'registration_date': row.get('registration_date', str(date.today()))
                                 }
                                 new_students.append(new_student)
                             
                             st.session_state.data['students'].extend(new_students)
+                            save_data(st.session_state.data)
                             st.success(f"Добавлено {len(new_students)} учеников!")
                     
                     elif data_type == "Родители":
