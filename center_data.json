@@ -786,6 +786,15 @@
             "direction": "Программирование",
             "type": "Разовое",
             "notes": ""
+        },
+        {
+            "id": "fc8ad326-5b43-4bb5-9e4f-f9a0e0b27e69",
+            "student_id": "f093edea-7e3d-4778-9cbe-7679ece56b22",
+            "date": "2025-08-04",
+            "amount": 4000.0,
+            "direction": "Индивидуальные занятия по гитаре",
+            "type": "Абонемент",
+            "notes": ""
         }
     ],
     "schedule": [
@@ -1253,7 +1262,7 @@
                 },
                 "f093edea-7e3d-4778-9cbe-7679ece56b22": {
                     "present": false,
-                    "paid": false,
+                    "paid": true,
                     "note": ""
                 }
             },
@@ -1262,6 +1271,69 @@
                     "present": false,
                     "paid": false,
                     "note": ""
+                }
+            }
+        },
+        "2025-08-12": {
+            "1765897e-60c2-44ad-8194-c1e53de03848": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-19": {
+            "1765897e-60c2-44ad-8194-c1e53de03848": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-26": {
+            "1765897e-60c2-44ad-8194-c1e53de03848": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-06": {
+            "dae6844f-17a6-4979-8074-1ee8be04f8b1": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-13": {
+            "dae6844f-17a6-4979-8074-1ee8be04f8b1": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-20": {
+            "dae6844f-17a6-4979-8074-1ee8be04f8b1": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
+                }
+            }
+        },
+        "2025-08-27": {
+            "dae6844f-17a6-4979-8074-1ee8be04f8b1": {
+                "f093edea-7e3d-4778-9cbe-7679ece56b22": {
+                    "present": false,
+                    "paid": true,
+                    "note": "Абонемент"
                 }
             }
         }
