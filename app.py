@@ -25,12 +25,7 @@ if not GITHUB_TOKEN or not GIST_ID:
     # Присваиваем пустые значения, чтобы избежать ошибок
     GITHUB_TOKEN = ""
     GIST_ID = ""
-# --- DEBUGGING SECRETS (REMOVE AFTER FIXING) ---
-st.header("Проверка секретов")
-st.write(f"Значение GITHUB_TOKEN: **{'<скрыто>' if st.secrets.get('GITHUB_TOKEN') else 'Токен не найден!'}**")
-st.write(f"Значение GIST_ID: **{st.secrets.get('GIST_ID')}**")
-st.write("---")
-# --- END DEBUGGING CODE ---
+
 # --- Configuration and Data Storage ---
 DATA_FILE = 'center_data.json'
 MEDIA_FOLDER = 'media'
@@ -79,7 +74,40 @@ if not os.path.exists(MEDIA_FOLDER):
     os.makedirs(MEDIA_FOLDER)
     for subfolder in ["images", "documents", "videos", "general"]:
         os.makedirs(os.path.join(MEDIA_FOLDER, subfolder))
+def archive_data():
+    """Переносит старые данные в отдельный архивный Gist"""
+    try:
+        old_data = st.session_state.data.copy()
+        
+        # Создаем новый архивный Gist
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        archive_gist = g.create_gist(
+            public=False,
+            files={"archive_center_data.json": InputFileContent(json.dumps(old_data, ensure_ascii=False, indent=4))},
+            description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        
+        # Сохраняем ссылку на архив в основном файле
+        st.session_state.data.setdefault('_archives', []).append({
+            'url': archive_gist.html_url,
+            'created': str(datetime.now()),
+            'id': archive_gist.id
+        })
+        
+        # Очищаем только устаревшие данные, сохраняя актуальные
+        for key in ['payments', 'attendance']:
+            if key in st.session_state.data:
+                st.session_state.data[key] = {}
+        
+        save_data(st.session_state.data)
+        return True
+    except Exception as e:
+        st.error(f"Ошибка архивации: {str(e)}")
+        return False
 
+json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+if len(json_str) > 500000:  # 500KB
+    archive_data()
 # Load data from JSON file
 def load_data():
     """Загружает данные из GitHub Gist с обработкой ошибок"""
@@ -3057,37 +3085,4 @@ else:
         show_version_view_page()
     else:
         st.info("Выберите раздел в меню слева.")
-def archive_data():
-    """Переносит старые данные в отдельный архивный Gist"""
-    try:
-        old_data = st.session_state.data.copy()
-        
-        # Создаем новый архивный Gist
-        g = Github(st.secrets["GITHUB_TOKEN"])
-        archive_gist = g.create_gist(
-            public=False,
-            files={"archive_center_data.json": InputFileContent(json.dumps(old_data, ensure_ascii=False, indent=4))},
-            description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        )
-        
-        # Сохраняем ссылку на архив в основном файле
-        st.session_state.data.setdefault('_archives', []).append({
-            'url': archive_gist.html_url,
-            'created': str(datetime.now()),
-            'id': archive_gist.id
-        })
-        
-        # Очищаем только устаревшие данные, сохраняя актуальные
-        for key in ['payments', 'attendance']:
-            if key in st.session_state.data:
-                st.session_state.data[key] = {}
-        
-        save_data(st.session_state.data)
-        return True
-    except Exception as e:
-        st.error(f"Ошибка архивации: {str(e)}")
-        return False
 
-json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
-if len(json_str) > 500000:  # 500KB
-    archive_data()
