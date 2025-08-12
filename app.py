@@ -17,10 +17,14 @@ from github import Github
 from github import InputFileContent
 
 # Конфигурация (используйте секреты Streamlit!)
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]  # Добавьте в Secrets на Streamlit
-GIST_ID = st.secrets["GIST_ID"]  # ID вашего gist
-if not GITHUB_TOKEN:
-    st.error("GitHub токен не настроен! Данные будут сохраняться только локально")
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
+GIST_ID = st.secrets.get("GIST_ID")
+
+if not GITHUB_TOKEN or not GIST_ID:
+    st.error("GitHub токен или ID Gist не настроены! Данные будут сохраняться только локально.")
+    # Присваиваем пустые значения, чтобы избежать ошибок
+    GITHUB_TOKEN = ""
+    GIST_ID = ""
 
 # --- Configuration and Data Storage ---
 DATA_FILE = 'center_data.json'
