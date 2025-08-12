@@ -74,6 +74,30 @@ if not os.path.exists(MEDIA_FOLDER):
     os.makedirs(MEDIA_FOLDER)
     for subfolder in ["images", "documents", "videos", "general"]:
         os.makedirs(os.path.join(MEDIA_FOLDER, subfolder))
+
+# Load data from JSON file
+def load_data():
+    """Загружает данные из GitHub Gist с обработкой ошибок"""
+    try:
+        # Пытаемся загрузить из Gist
+        g = Github(GITHUB_TOKEN)
+        try:
+            gist = g.get_gist(GIST_ID)
+            content = gist.files["center_data.json"].content
+            return json.loads(content)
+        except Exception as gist_error:
+            st.warning(f"Ошибка загрузки из Gist: {gist_error}")
+    
+    except Exception as github_error:
+        st.warning(f"Ошибка подключения к GitHub: {github_error}")
+    
+    # Fallback на локальный файл
+    try:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as local_error:
+        st.error(f"Ошибка загрузки локального файла: {local_error}")
+        return initial_data
 def archive_data():
     """Переносит старые данные в отдельный архивный Gist"""
     try:
@@ -108,29 +132,6 @@ def archive_data():
 json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
 if len(json_str) > 500000:  # 500KB
     archive_data()
-# Load data from JSON file
-def load_data():
-    """Загружает данные из GitHub Gist с обработкой ошибок"""
-    try:
-        # Пытаемся загрузить из Gist
-        g = Github(GITHUB_TOKEN)
-        try:
-            gist = g.get_gist(GIST_ID)
-            content = gist.files["center_data.json"].content
-            return json.loads(content)
-        except Exception as gist_error:
-            st.warning(f"Ошибка загрузки из Gist: {gist_error}")
-    
-    except Exception as github_error:
-        st.warning(f"Ошибка подключения к GitHub: {github_error}")
-    
-    # Fallback на локальный файл
-    try:
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as local_error:
-        st.error(f"Ошибка загрузки локального файла: {local_error}")
-        return initial_data
 # Save data to JSON file
 def save_data(data):
     """Сохраняет данные в GitHub Gist и локально"""
