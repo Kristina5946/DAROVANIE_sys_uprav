@@ -315,7 +315,13 @@ def get_student_by_id(student_id):
 def get_direction_by_id(direction_id):
     """Get direction by ID. Uses caching to improve performance."""
     return next((d for d in st.session_state.data['directions'] if d.get('id') == direction_id), None)
-
+@st.cache_data
+def get_subdirection_by_id(subdirection_id):
+    for d in st.session_state.data['directions']:
+        for sub in d.get('subdirections', []):
+            if sub['id'] == subdirection_id:
+                return sub
+    return None
 @st.cache_data
 def get_teacher_by_id(teacher_id):
     """Get teacher by ID. Uses caching to improve performance."""
@@ -348,6 +354,22 @@ def calculate_age(birth_date):
     
     today = date.today()
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+def add_subdirection(direction_id, student_name, student_id=None):
+    direction = next(d for d in st.session_state.data['directions'] if d['id'] == direction_id)
+    sub_name = f"{direction['name']} ({student_name})"
+    
+    new_sub = {
+        "id": str(uuid.uuid4()),
+        "name": sub_name,
+        "student_id": student_id
+    }
+    
+    if 'subdirections' not in direction:
+        direction['subdirections'] = []
+    
+    direction['subdirections'].append(new_sub)
+    save_data(st.session_state.data)
+    return new_sub
 def add_individual_lesson(student_id, teacher_id, direction_name, date_str, start_time, end_time, room=None):
     """Добавляет индивидуальное занятие с проверкой занятости"""
     lessons = st.session_state.data.get("individual_lessons", [])
@@ -643,7 +665,56 @@ def show_directions_page():
                     st.rerun()
                 else:
                     st.error("Название обязательно.")
-
+    # Новая секция для управления поднаправлениями
+    with st.expander("➕ Управление поднаправлениями", expanded=False):
+        selected_dir = st.selectbox(
+            "Выберите направление",
+            [d for d in directions if d.get('is_individual', False)],
+            format_func=lambda x: x['name']
+        )
+        
+        if selected_dir:
+            # Добавление нового поднаправления
+            with st.form("new_subdirection_form"):
+                student = st.selectbox(
+                    "Ученик",
+                    [s for s in st.session_state.data['students']],
+                    format_func=lambda x: x['name']
+                )
+                
+                if st.form_submit_button("Добавить поднаправление"):
+                    new_sub = add_subdirection(
+                        selected_dir['id'],
+                        student['name'],
+                        student['id']
+                    )
+                    st.success(f"Добавлено: {new_sub['name']}")
+                    st.rerun()
+            
+            # Таблица существующих поднаправлений
+            if selected_dir.get('subdirections'):
+                st.subheader("Текущие поднаправления")
+                sub_df = pd.DataFrame(selected_dir['subdirections'])
+                
+                # Добавляем колонку для удаления
+                sub_df['Удалить'] = False
+                
+                edited = st.data_editor(
+                    sub_df[['name', 'Удалить']],
+                    hide_index=True,
+                    disabled=['name']
+                )
+                
+                if st.button("Удалить отмеченные"):
+                    to_keep = [s for s, remove in zip(
+                        selected_dir['subdirections'],
+                        edited['Удалить']
+                    ) if not remove]
+                    
+                    selected_dir['subdirections'] = to_keep
+                    save_data(st.session_state.data)
+                    st.success("Поднаправления обновлены!")
+                    st.rerun()
     # 🔄 Переключение режима отображения
     st.markdown("### 📌 Отображение")
     view_mode = st.radio("Режим", ["📋 Таблица", "🧾 Карточки"], horizontal=True)
@@ -655,7 +726,10 @@ def show_directions_page():
             for d in directions:
                 if 'id' not in d:
                     d['id'] = str(uuid.uuid4())  # фиксация KeyError
-                student_count = len([s for s in students if d['name'] in s.get("directions", [])])
+                if d.get('is_individual', False) and d.get('subdirections'):
+                    student_count = len(d['subdirections'])
+                else:
+                    student_count = len([s for s in students if d['name'] in s.get("directions", [])])
                 table_data.append({
                     "id": d["id"],
                     "Название": d["name"],
@@ -934,7 +1008,18 @@ def show_students_page():
                                          format_func=lambda x: parent_map.get(x, "Новый родитель") if x else "Новый родитель")
                 new_parent_name = st.text_input("Имя нового родителя")
                 new_parent_phone = st.text_input("Телефон нового родителя")
-                selected_dirs = st.multiselect("Направления", [d['name'] for d in directions])
+                selected_dirs = []
+                for d in directions:
+                    if d.get('is_individual', False) and d.get('subdirections'):
+                        selected_sub = st.selectbox(
+                            f"Выберите поднаправление для {d['name']}",
+                            [None] + [s['name'] for s in d['subdirections']]
+                        )
+                        if selected_sub:
+                            selected_dirs.append(selected_sub)
+                    else:
+                        if st.checkbox(d['name']):
+                            selected_dirs.append(d['name'])
 
             if st.form_submit_button("Добавить"):
                 if name:
@@ -1150,7 +1235,18 @@ def show_teachers_page():
                 phone = st.text_input("Телефон")
                 email = st.text_input("Email")
             with col2:
-                teacher_directions = st.multiselect("Направления", [d['name'] for d in directions])
+                teacher_directions = []
+                for d in directions:
+                    if d.get('is_individual', False) and d.get('subdirections'):
+                        teacher_sub = st.selectbox(
+                            f"Выберите поднаправление для {d['name']}",
+                            [None] + [s['name'] for s in d['subdirections']]
+                        )
+                        if teacher_sub:
+                            teacher_directions.append(selected_sub)
+                    else:
+                        if st.checkbox(d['name']):
+                            teacher_directions.append(d['name'])
                 notes = st.text_area("Заметки")
 
             if st.form_submit_button("Добавить"):
@@ -1271,7 +1367,18 @@ def show_schedule_page():
             with st.form("new_schedule_form"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    direction_name = st.selectbox("Направление*", [d['name'] for d in directions])
+                    direction_name = []
+                    for d in directions:
+                        if d.get('is_individual', False) and d.get('subdirections'):
+                            direction_sub = st.selectbox(
+                                f"Выберите поднаправление для {d['name']}",
+                                [None] + [s['name'] for s in d['subdirections']]
+                            )
+                            if direction_sub:
+                                direction_name.append(selected_sub)
+                        else:
+                            if st.checkbox(d['name']):
+                                direction_name.append(d['name'])
                     teacher = st.selectbox("Преподаватель*", [t['name'] for t in teachers])
                 with col2:
                     start_time = st.time_input("Начало*", value=datetime.strptime("16:00", "%H:%M").time())
@@ -2194,7 +2301,6 @@ def show_data_management_page():
                 file_name=f"center_data_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
-import requests
 
 GITHUB_API = "https://api.github.com"
 
