@@ -129,9 +129,6 @@ def archive_data():
         st.error(f"Ошибка архивации: {str(e)}")
         return False
 
-json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
-if len(json_str) > 500000:  # 500KB
-    archive_data()
 # Save data to JSON file
 def save_data(data):
     """Сохраняет данные в GitHub Gist и локально"""
