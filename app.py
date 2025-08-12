@@ -371,7 +371,15 @@ def archive_data():
 json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
 if len(json_str) > 500000:  # 500KB
     archive_data()
-
+if st.session_state.get('authenticated') and st.session_state.role == 'admin':
+    if st.sidebar.button("Проверить соединение с GitHub"):
+        try:
+            g = Github(GITHUB_TOKEN)
+            gist = g.get_gist(GIST_ID)
+            st.sidebar.success(f"Gist загружен! Последнее обновление: {gist.updated_at}")
+            st.sidebar.json(gist.files["center_data.json"].content[:500] + "...")
+        except Exception as e:
+            st.sidebar.error(f"Ошибка: {str(e)}")
 
 # --- Page Content Functions ---
 def show_home_page():
