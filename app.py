@@ -98,43 +98,57 @@ def load_data():
     except Exception as local_error:
         st.error(f"Ошибка загрузки локального файла: {local_error}")
         return initial_data
+def get_github_client():
+    """Создает клиент GitHub с обработкой ошибок"""
+    if not GITHUB_TOKEN:
+        st.warning("GitHub токен не настроен! Работаем локально.")
+        return None
+    try:
+        return Github(GITHUB_TOKEN)
+    except Exception as e:
+        st.error(f"Ошибка подключения к GitHub: {e}")
+        return None
+
 def archive_data():
     """Переносит старые данные в отдельный архивный Gist"""
     try:
         old_data = st.session_state.data.copy()
+        json_str = json.dumps(old_data, ensure_ascii=False, indent=4)
         
-        # Создаем новый архивный Gist
-        g = Github(st.secrets["GITHUB_TOKEN"])
-        archive_gist = g.create_gist(
+        g = get_github_client()
+        if not g:
+            return False
+            
+        # Создаем новый архивный Gist через пользователя
+        archive_gist = g.get_user().create_gist(
             public=False,
-            files={"archive_center_data.json": InputFileContent(json.dumps(old_data, ensure_ascii=False, indent=4))},
+            files={"archive_center_data.json": InputFileContent(json_str)},
             description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
         
-        # Сохраняем ссылку на архив в основном файле
+        # Сохраняем ссылку на архив
         st.session_state.data.setdefault('_archives', []).append({
             'url': archive_gist.html_url,
             'created': str(datetime.now()),
             'id': archive_gist.id
         })
         
-        # Очищаем только устаревшие данные, сохраняя актуальные
+        # Очищаем только устаревшие данные
         for key in ['payments', 'attendance']:
             if key in st.session_state.data:
                 st.session_state.data[key] = {}
         
-        save_data(st.session_state.data)
-        return True
+        return save_data(st.session_state.data)
+        
     except Exception as e:
         st.error(f"Ошибка архивации: {str(e)}")
         return False
 
-# Save data to JSON file
 def save_data(data):
     """Сохраняет данные в GitHub Gist и локально"""
     json_str = json.dumps(data, ensure_ascii=False, indent=4)
     
-    # Проверка размера (Gist ограничен 1MB на файл)
+    # Проверка размера
     if len(json_str) > 900000:
         st.warning("Данные приближаются к лимиту (1MB). Рекомендуется архивация.")
         if st.button("Архивировать старые данные автоматически"):
@@ -143,19 +157,26 @@ def save_data(data):
             else:
                 return False
     
+    # Локальное сохранение
     try:
-        g = Github(st.secrets["GITHUB_TOKEN"])
-        gist = g.get_gist(st.secrets["GIST_ID"])
-        gist.edit(files={"center_data.json": {"content": json_str}})
-        
-        # Локальное сохранение
         with open(DATA_FILE, 'w') as f:
             f.write(json_str)
-            
-        return True
     except Exception as e:
-        st.error(f"Ошибка сохранения: {str(e)}")
+        st.error(f"Ошибка локального сохранения: {str(e)}")
         return False
+    
+    # Сохранение в GitHub (если настроено)
+    if GITHUB_TOKEN and GIST_ID:
+        try:
+            g = get_github_client()
+            if g:
+                gist = g.get_gist(GIST_ID)
+                gist.edit(files={"center_data.json": {"content": json_str}})
+        except Exception as e:
+            st.error(f"Ошибка синхронизации с GitHub: {str(e)}")
+            return False
+    
+    return True
 
 # Initialize session state for the app
 if 'data' not in st.session_state:
