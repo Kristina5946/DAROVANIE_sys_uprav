@@ -2916,6 +2916,7 @@ else:
                     'parents': [],
                     'payments': [],
                     'schedule': [],
+                    'individual_lessons': [],
                     'materials': [],
                     'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
                     'attendance': {},
