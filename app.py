@@ -52,7 +52,6 @@ if not os.path.exists(DATA_FILE):
         'payments': [],
         'schedule': [],
         'individual_lessons': [],
-        'recurring_lessons': [],
         'materials': [],
         'attendance': {},
         'kanban_tasks': {
@@ -223,7 +222,6 @@ if 'data' not in st.session_state:
         'payments': [],
         'schedule': [],
         'individual_lessons': [],
-        'recurring_lessons': [],
         'materials': [],
         'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
         'attendance': {},
@@ -2415,7 +2413,18 @@ def show_payments_report():
                 df_filtered[['student', 'date', 'amount', 'direction', 'type', 'notes']],
                 use_container_width=True
             )
-            
+            edited_df = st.data_editor(
+                df_payments,
+                num_rows="dynamic",
+                column_config={
+                    "Удалить": st.column_config.CheckboxColumn()
+                }
+            )
+
+            if st.button("Удалить отмеченные"):
+                df_payments = df_payments[~edited_df['Удалить']]
+                st.session_state.data['payments'] = df_payments.to_dict('records')
+                save_data(st.session_state.data)
             # Summary statistics
             total_payments = df_filtered['amount'].sum()
             st.subheader(f"Общая сумма оплат: {total_payments:.2f} руб.")
