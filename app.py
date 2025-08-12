@@ -12,79 +12,32 @@ import csv
 from io import StringIO
 import base64
 
+import requests
+from github import Github
+from github import InputFileContent
+
+# Конфигурация (используйте секреты Streamlit!)
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]  # Добавьте в Secrets на Streamlit
+GIST_ID = st.secrets["GIST_ID"]  # ID вашего gist
+if not GITHUB_TOKEN:
+    st.error("GitHub токен не настроен! Данные будут сохраняться только локально")
+
 # --- Configuration and Data Storage ---
 DATA_FILE = 'center_data.json'
 MEDIA_FOLDER = 'media'
 st.set_page_config(layout="wide", page_title="Детский центр - Управление")
 
-# User authentication data (for a small, local app)
-USERS = {
-    # Администратор (полный доступ)
-    "admin": {
-        "password": "admin123", 
-        "role": "admin",
-        "teacher_id": None
-    },
-    
-    # Преподаватели (ограниченный доступ)
-    "teacher": {
-        "password": "teacher123",
-        "role": "reception",
-        "teacher_id": None
-    },
-    "Eseniya": {
-        "password": "Eseniya123",
-        "role": "teacher",
-        "teacher_id": None
-    },
-    "kristina": {
-        "password": "kristina123",
-        "role": "teacher",
-        "teacher_id": "0138ade6-d53a-4cf1-a991-d6fe190dd78c"  # Филиппова Кристина Евгеньевна
-    },
-    "maria": {
-        "password": "maria123",
-        "role": "teacher",
-        "teacher_id": "c13d7275-0cf0-46a7-b553-ed49eb7f3c18"  # Сидорова Мария (английский)
-    },
-    "lusine": {
-        "password": "lusine123",
-        "role": "teacher",
-        "teacher_id": "af26a45e-2bfb-48f2-987c-94bf08da0a24"  # Лусине Арамовна Петросян
-    },
-    "oksana": {
-        "password": "oksana123",
-        "role": "teacher",
-        "teacher_id": "4e75e60a-c7b6-404f-9c55-5b7cf4982c8d"  # Оксана Викторовна Иванова
-    },
-    "ali": {
-        "password": "ali123",
-        "role": "teacher",
-        "teacher_id": "e9f70379-02f6-42d7-a4b4-31ce5bf4a840"  # Али Магомедович Каримов
-    },
-    "natalia_v": {
-        "password": "natalia123",
-        "role": "teacher",
-        "teacher_id": "17ecccaf-5300-4238-8728-21cbb78db67b"  # Гелунова Наталья Владимировна
-    },
-    "natalia_s": {
-        "password": "natalias123",
-        "role": "teacher",
-        "teacher_id": "47454a8d-fa51-4f64-aa30-79a5f1d1a476"  # Наталья Сергеевна Смирнова
-    },
-    "elena": {
-        "password": "elena123",
-        "role": "teacher",
-        "teacher_id": "92c00fb4-80a8-4d26-af5a-f9bb58218fea"  # Елена Александровна Ковалева
-    },
-    
-    # Ресепшен (специальная роль)
-    "reception": {
-        "password": "reception123",
-        "role": "reception",
-        "teacher_id": None
-    }
-}
+def get_users():
+    """Загружает пользователей из secrets"""
+    users = {}
+    for username in st.secrets.users:
+        user_cfg = st.secrets.users[username]
+        users[username] = {
+            "password": user_cfg["password"],
+            "role": user_cfg["role"],
+            "teacher_id": user_cfg.get("teacher_id") or None
+        }
+    return users
 
 # Check if the data file exists, if not, create a new one with an empty structure
 if not os.path.exists(DATA_FILE):
@@ -120,18 +73,54 @@ if not os.path.exists(MEDIA_FOLDER):
 
 # Load data from JSON file
 def load_data():
-    """Load data from the JSON file."""
+    """Загружает данные из GitHub Gist с обработкой ошибок"""
+    try:
+        # Пытаемся загрузить из Gist
+        g = Github(GITHUB_TOKEN)
+        try:
+            gist = g.get_gist(GIST_ID)
+            content = gist.files["center_data.json"].content
+            return json.loads(content)
+        except Exception as gist_error:
+            st.warning(f"Ошибка загрузки из Gist: {gist_error}")
+    
+    except Exception as github_error:
+        st.warning(f"Ошибка подключения к GitHub: {github_error}")
+    
+    # Fallback на локальный файл
     try:
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except FileNotFoundError:
-        return {}
-
+    except Exception as local_error:
+        st.error(f"Ошибка загрузки локального файла: {local_error}")
+        return initial_data
 # Save data to JSON file
 def save_data(data):
-    """Save data to the JSON file."""
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    """Сохраняет данные в GitHub Gist и локально"""
+    json_str = json.dumps(data, ensure_ascii=False, indent=4)
+    
+    # Проверка размера (Gist ограничен 1MB на файл)
+    if len(json_str) > 900000:
+        st.warning("Данные приближаются к лимиту (1MB). Рекомендуется архивация.")
+        if st.button("Архивировать старые данные автоматически"):
+            if archive_data():
+                st.rerun()
+            else:
+                return False
+    
+    try:
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        gist = g.get_gist(st.secrets["GIST_ID"])
+        gist.edit(files={"center_data.json": {"content": json_str}})
+        
+        # Локальное сохранение
+        with open(DATA_FILE, 'w') as f:
+            f.write(json_str)
+            
+        return True
+    except Exception as e:
+        st.error(f"Ошибка сохранения: {str(e)}")
+        return False
 
 # Initialize session state for the app
 if 'data' not in st.session_state:
@@ -178,19 +167,20 @@ for var, default in session_vars.items():
 
 # --- Authentication Functions ---
 def login(username, password):
-    """Handles user login with role-based permissions."""
-    if username in USERS and USERS[username]['password'] == password:
-        st.session_state.authenticated = True
-        st.session_state.username = username
-        st.session_state.role = USERS[username]['role']
-        st.session_state.teacher_id = USERS[username].get('teacher_id')
-        
+    """Проверяет логин/пароль"""
+    users = get_users()
+    if username in users and users[username]["password"] == password:
+        st.session_state.update({
+            "authenticated": True,
+            "username": username,
+            "role": users[username]["role"],
+            "teacher_id": users[username]["teacher_id"]
+        })
         st.success(f"Добро пожаловать, {username}!")
-        st.cache_data.clear()
-        st.session_state.page = 'home'
         st.rerun()
     else:
         st.error("Неверное имя пользователя или пароль.")
+
 def check_permission(allowed_roles=None, teacher_only=False):
     """Decorator to check user permissions."""
     if allowed_roles is None:
@@ -282,6 +272,50 @@ def suggest_directions(age, gender=None):
                 suitable.append(direction)
     return suitable
 
+# Добавьте эту функцию в ваш код для просмотра истории
+def show_gist_history():
+    g = Github(st.secrets["GITHUB_TOKEN"])
+    gist = g.get_gist(st.secrets["GIST_ID"])
+    st.write("Последние изменения:")
+    
+    for version in gist.history:
+        st.write(f"Версия от {version.committed_at}:")
+        st.code(version.files["center_data.json"].content[:200] + "...")  # Показываем начало файла
+def archive_data():
+    """Переносит старые данные в отдельный архивный Gist"""
+    try:
+        old_data = st.session_state.data.copy()
+        
+        # Создаем новый архивный Gist
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        archive_gist = g.create_gist(
+            public=False,
+            files={"archive_center_data.json": InputFileContent(json.dumps(old_data, ensure_ascii=False, indent=4))},
+            description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        
+        # Сохраняем ссылку на архив в основном файле
+        st.session_state.data.setdefault('_archives', []).append({
+            'url': archive_gist.html_url,
+            'created': str(datetime.now()),
+            'id': archive_gist.id
+        })
+        
+        # Очищаем только устаревшие данные, сохраняя актуальные
+        for key in ['payments', 'attendance']:
+            if key in st.session_state.data:
+                st.session_state.data[key] = {}
+        
+        save_data(st.session_state.data)
+        return True
+    except Exception as e:
+        st.error(f"Ошибка архивации: {str(e)}")
+        return False
+
+json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+if len(json_str) > 500000:  # 500KB
+    archive_data()
+
 
 # --- Page Content Functions ---
 def show_home_page():
@@ -358,13 +392,16 @@ def show_home_page():
             
             st.text_area("Сообщение для WhatsApp", message, height=200)
             
-            # Кнопка для копирования
+            # Сначала обработайте сообщение, заменив символы новой строки
+            processed_message = message.replace('\n', '%0A')
+
+            # Затем используйте уже обработанную переменную в f-строке
             st.markdown(f"""
-            <a href="https://wa.me/?text={message.replace('\n', '%0A')}" target="_blank">
-                <button style="background-color:#25D366;color:white;border:none;padding:10px 20px;border-radius:5px;">
-                    Открыть в WhatsApp
-                </button>
-            </a>
+                <a href="https://wa.me/?text={processed_message}" target="_blank">
+                    <button style="background-color:#25D366;color:white;border:none;padding:10px 20px;border-radius:5px;">
+                        Открыть в WhatsApp
+                    </button>
+                </a>
             """, unsafe_allow_html=True)
         else:
             st.warning("На выбранный день нет занятий")
@@ -819,6 +856,49 @@ def show_students_page():
                 save_data(st.session_state.data)
                 st.success("Данные обновлены.")
                 st.rerun()
+            # Создаем DataFrame с колонкой для удаления
+        df = pd.DataFrame(students)
+        df['Удалить'] = False
+        
+        # Отображаем редактор таблицы
+        edited_df = st.data_editor(
+            df[['id', 'name', 'dob', 'gender', 'parent_id', 'directions', 'notes', 'Удалить']],
+            hide_index=True,
+            use_container_width=True,
+            disabled=['id'],
+            column_config={
+                "Удалить": st.column_config.CheckboxColumn("Удалить?")
+            }
+        )
+        
+        # Кнопка для удаления отмеченных строк
+        if st.button("🗑️ Удалить выбранных учеников"):
+            to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
+            
+            if to_delete:
+                # Удаляем учеников
+                st.session_state.data['students'] = [
+                    s for s in students if s['id'] not in to_delete
+                ]
+                
+                # Удаляем связанные платежи
+                st.session_state.data['payments'] = [
+                    p for p in st.session_state.data['payments']
+                    if p['student_id'] not in to_delete
+                ]
+                
+                # Обновляем посещения
+                for date_key in st.session_state.data['attendance']:
+                    for lesson_id in list(st.session_state.data['attendance'][date_key].keys()):
+                        for student_id in list(st.session_state.data['attendance'][date_key][lesson_id].keys()):
+                            if student_id in to_delete:
+                                del st.session_state.data['attendance'][date_key][lesson_id][student_id]
+                
+                save_data(st.session_state.data)
+                st.success(f"Удалено {len(to_delete)} учеников!")
+                st.rerun()
+            else:
+                st.warning("Не выбрано ни одного ученика для удаления")
         else:
             st.info("Нет учеников.")
     else:
@@ -989,6 +1069,44 @@ def show_teachers_page():
             save_data(st.session_state.data)
             st.success("Изменения сохранены!")
             st.rerun()
+        # Создаем DataFrame с колонкой для удаления
+        df = pd.DataFrame(teachers)
+        df['Удалить'] = False  # Добавляем колонку с чекбоксами
+        
+        # Отображаем редактор таблицы
+        edited_df = st.data_editor(
+            df[['id', 'name', 'phone', 'email', 'directions', 'notes', 'Удалить']],
+            hide_index=True,
+            use_container_width=True,
+            disabled=['id'],
+            column_config={
+                "directions": st.column_config.ListColumn("Направления"),
+                "Удалить": st.column_config.CheckboxColumn("Удалить?")
+            }
+        )
+        
+        # Кнопка для удаления отмеченных строк
+        if st.button("🗑️ Удалить выбранных преподавателей"):
+            # Получаем ID преподавателей для удаления
+            to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
+            
+            if to_delete:
+                # Удаляем из основного списка
+                st.session_state.data['teachers'] = [
+                    t for t in teachers if t['id'] not in to_delete
+                ]
+                
+                # Удаляем из расписания
+                st.session_state.data['schedule'] = [
+                    lesson for lesson in st.session_state.data['schedule'] 
+                    if lesson['teacher'] not in [t['name'] for t in teachers if t['id'] in to_delete]
+                ]
+                
+                save_data(st.session_state.data)
+                st.success(f"Удалено {len(to_delete)} преподавателей!")
+                st.rerun()
+            else:
+                st.warning("Не выбрано ни одного преподавателя для удаления")
     else:
         st.info("Преподаватели не добавлены.")
 
@@ -1860,7 +1978,250 @@ def show_bulk_upload_page():
         
         except Exception as e:
             st.error(f"Ошибка при чтении файла: {str(e)}")
+def show_data_management_page():
+    st.header("⚙️ Управление данными")
+    
+    # Информация о размере данных
+    json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+    data_size = len(json_str)
+    st.progress(min(data_size/1000000, 1), 
+               text=f"Использовано: {data_size/1024:.1f} KB / 1 MB ({(data_size/1000000)*100:.1f}%)")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Создать резервную копию"):
+            if save_data(st.session_state.data):
+                st.success("Резервная копия создана!")
+    
+    with col2:
+        if st.button("🧹 Оптимизировать данные"):
+            if archive_data():
+                st.success("Данные оптимизированы и архивированы!")
+                st.rerun()
+    
+    st.markdown("---")
+    st.subheader("Экспорт данных")
+    
+    format_choice = st.radio("Формат экспорта", ["JSON", "CSV (только табличные данные)"])
+    
+    if st.button("📥 Экспортировать все данные"):
+        if format_choice == "JSON":
+            data_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+            st.download_button(
+                label="Скачать JSON",
+                data=data_str,
+                file_name=f"center_data_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json"
+            )
+        else:
+            # Для CSV нужно преобразовать основные таблицы
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Собираем данные из всех таблиц
+            tables = {
+                'students': st.session_state.data.get('students', []),
+                'teachers': st.session_state.data.get('teachers', []),
+                'payments': st.session_state.data.get('payments', []),
+                'schedule': st.session_state.data.get('schedule', [])
+            }
+            
+            for name, data in tables.items():
+                writer.writerow([f"=== {name} ==="])
+                if data:
+                    writer.writerow(data[0].keys())  # заголовки
+                    for row in data:
+                        writer.writerow(row.values())
+                writer.writerow([])
+            
+            st.download_button(
+                label="Скачать CSV",
+                data=output.getvalue(),
+                file_name=f"center_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+def show_version_history_page():
+    """Страница для просмотра истории изменений данных"""
+    st.header("🕰 История версий данных")
+    
+    try:
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        gist = g.get_gist(st.secrets["GIST_ID"])
+        
+        # Получаем все версии gist
+        versions = sorted(gist.history, key=lambda x: x.committed_at, reverse=True)
+        
+        if not versions:
+            st.info("История изменений не найдена")
+            return
+        
+        # Показываем последние 10 версий
+        st.subheader(f"Последние изменения (всего {len(versions)} версий)")
+        
+        for i, version in enumerate(versions[:10]):
+            with st.expander(f"Версия от {version.committed_at.strftime('%Y-%m-%d %H:%M')}"):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    # Показываем первые 10 строк изменений
+                    content = version.files["center_data.json"].content
+                    st.code("\n".join(content.split("\n")[:10]))
+                    
+                with col2:
+                    # Кнопка для просмотра полной версии
+                    if st.button("Просмотреть", key=f"view_{i}"):
+                        st.session_state.viewing_version = content
+                        st.session_state.page = "view_version"
+                        st.rerun()
+                    
+                    # Кнопка восстановления
+                    if st.button("Восстановить", key=f"restore_{i}"):
+                        if st.session_state.role != 'admin':
+                            st.warning("Только администратор может восстанавливать версии")
+                        else:
+                            confirm = st.checkbox(f"Подтвердите восстановление версии от {version.committed_at}")
+                            if confirm:
+                                restored_data = json.loads(content)
+                                save_data(restored_data)
+                                st.success("Версия восстановлена! Обновите страницу.")
+                                time.sleep(2)
+                                st.rerun()
+        
+        # Пагинация
+        if len(versions) > 10:
+            st.write(f"Показано 10 из {len(versions)} версий")
+            
+    except Exception as e:
+        st.error(f"Ошибка при загрузке истории: {str(e)}")
 
+def show_data_archives_page():
+    """Страница для управления архивными копиями данных"""
+    st.header("📦 Архивы данных")
+    
+    # Инициализация списка архивов, если его нет
+    if '_archives' not in st.session_state.data:
+        st.session_state.data['_archives'] = []
+        save_data(st.session_state.data)
+    
+    # Создание нового архива
+    with st.expander("➕ Создать новый архив", expanded=False):
+        archive_name = st.text_input("Название архива*", placeholder="Архив на 2024-01-01")
+        archive_desc = st.text_area("Описание", placeholder="Резервная копия перед обновлением системы")
+        
+        if st.button("Создать архивную копию"):
+            if not archive_name:
+                st.error("Пожалуйста, укажите название архива")
+            else:
+                try:
+                    # Подготовка данных для архива
+                    archive_data = json.dumps(st.session_state.data, indent=4, ensure_ascii=False)
+                    
+                    # Создаем новый gist с архивом
+                    g = Github(st.secrets["GITHUB_TOKEN"])
+                    archive_gist = g.create_gist(
+                        public=False,
+                        files={"archive.json": InputFileContent(archive_data)},
+                        description=f"{archive_name} | {archive_desc}"
+                    )
+                    
+                    # Добавляем запись в список архивов
+                    new_archive = {
+                        'id': archive_gist.id,
+                        'name': archive_name,
+                        'description': archive_desc,
+                        'url': archive_gist.html_url,
+                        'created': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        'size': len(archive_data),
+                        'filename': "archive.json"
+                    }
+                    
+                    st.session_state.data['_archives'].append(new_archive)
+                    save_data(st.session_state.data)
+                    
+                    st.success(f"""
+                    Архив успешно создан!
+                    - ID: `{archive_gist.id}`
+                    - Размер: {new_archive['size']/1024:.1f} KB
+                    - [Открыть на GitHub]({archive_gist.html_url})
+                    """)
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Ошибка при создании архива: {str(e)}")
+                    st.error("Убедитесь, что:")
+                    st.error("1. GitHub токен корректный и имеет права на создание gists")
+                    st.error("2. Интернет-соединение стабильное")
+
+    # Список существующих архивов
+    st.subheader("Существующие архивы")
+    
+    if not st.session_state.data['_archives']:
+        st.info("Архивные копии не создавались")
+    else:
+        for archive in reversed(st.session_state.data['_archives']):
+            with st.container(border=True):
+                col1, col2, col3 = st.columns([4, 1, 1])
+                with col1:
+                    st.subheader(archive['name'])
+                    st.caption(archive['description'])
+                    st.write(f"📅 {archive['created']} | 📏 {archive['size']/1024:.1f} KB")
+                    st.markdown(f"[🔗 Открыть в GitHub]({archive['url']})")
+                
+                with col2:
+                    # Кнопка восстановления
+                    if st.button("↩️ Восстановить", key=f"restore_{archive['id']}"):
+                        if st.session_state.role != 'admin':
+                            st.warning("Только администратор может восстанавливать архивы")
+                        else:
+                            if st.checkbox(f"Подтвердите восстановление архива '{archive['name']}'"):
+                                try:
+                                    g = Github(st.secrets["GITHUB_TOKEN"])
+                                    gist = g.get_gist(archive['id'])
+                                    content = gist.files[archive['filename']].content
+                                    restored_data = json.loads(content)
+                                    
+                                    st.session_state.data = restored_data
+                                    save_data(st.session_state.data)
+                                    st.success("Архив успешно восстановлен!")
+                                    time.sleep(2)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка восстановления: {str(e)}")
+                
+                with col3:
+                    # Кнопка удаления
+                    if st.button("🗑️ Удалить", key=f"del_{archive['id']}"):
+                        if st.session_state.role != 'admin':
+                            st.warning("Только администратор может удалять архивы")
+                        else:
+                            if st.checkbox(f"Вы уверены, что хотите удалить архив '{archive['name']}'?"):
+                                try:
+                                    g = Github(st.secrets["GITHUB_TOKEN"])
+                                    gist = g.get_gist(archive['id'])
+                                    gist.delete()
+                                    
+                                    # Удаляем из списка
+                                    st.session_state.data['_archives'] = [
+                                        a for a in st.session_state.data['_archives']
+                                        if a['id'] != archive['id']
+                                    ]
+                                    save_data(st.session_state.data)
+                                    st.success("Архив удален!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка удаления: {str(e)}")
+def show_version_view_page():
+    """Страница для просмотра конкретной версии"""
+    if 'viewing_version' not in st.session_state:
+        st.warning("Версия не выбрана")
+        st.session_state.page = "version_history"
+        st.rerun()
+    
+    st.header("👀 Просмотр версии данных")
+    st.code(st.session_state.viewing_version, language='json')
+    
+    if st.button("← Назад к истории"):
+        st.session_state.page = "version_history"
+        st.rerun()
 def show_payments_report():
     """Page for payments report."""
     st.header("📊 Отчет по оплатам")
@@ -2531,7 +2892,7 @@ def show_reception_helper():
                 save_data(st.session_state.data) # Убедитесь, что save_data определена
                 st.success("Ученик успешно записан на занятие!")
                 st.rerun() # Перезагрузка страницы для отображения изменений
-        
+
 # --- Main App Title and Navigation ---
 st.title("🏫 Система управления детским центром")
 
@@ -2556,6 +2917,11 @@ else:
         st.rerun()
 
     if st.session_state.role == 'admin':
+        with st.sidebar.expander("🔐 Администрирование", expanded=False):
+            st.button("⚙️ Управление данными", on_click=lambda: _navigate_to('data_management'))
+            st.button("🔄 История версий", on_click=lambda: _navigate_to('version_history'))
+            st.button("📦 Архивы данных", on_click=lambda: _navigate_to('data_archives'))
+            
         st.sidebar.button("🏠 Главная", on_click=lambda: _navigate_to('home'))
         st.sidebar.button("🎨 Направления", on_click=lambda: _navigate_to('directions'))
         st.sidebar.button("👦 Ученики и оплаты", on_click=lambda: _navigate_to('students'))
@@ -2672,5 +3038,47 @@ else:
         show_materials_report()
     elif st.session_state.page == 'reception_helper':
         show_reception_helper()
+    elif st.session_state.page == 'data_management':
+        show_data_management_page()
+    elif st.session_state.page == 'version_history':
+        show_version_history_page()
+    elif st.session_state.page == 'data_archives':
+        show_data_archives_page()
+    elif st.session_state.page == 'view_version':
+        show_version_view_page()
     else:
         st.info("Выберите раздел в меню слева.")
+def archive_data():
+    """Переносит старые данные в отдельный архивный Gist"""
+    try:
+        old_data = st.session_state.data.copy()
+        
+        # Создаем новый архивный Gist
+        g = Github(st.secrets["GITHUB_TOKEN"])
+        archive_gist = g.create_gist(
+            public=False,
+            files={"archive_center_data.json": InputFileContent(json.dumps(old_data, ensure_ascii=False, indent=4))},
+            description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        
+        # Сохраняем ссылку на архив в основном файле
+        st.session_state.data.setdefault('_archives', []).append({
+            'url': archive_gist.html_url,
+            'created': str(datetime.now()),
+            'id': archive_gist.id
+        })
+        
+        # Очищаем только устаревшие данные, сохраняя актуальные
+        for key in ['payments', 'attendance']:
+            if key in st.session_state.data:
+                st.session_state.data[key] = {}
+        
+        save_data(st.session_state.data)
+        return True
+    except Exception as e:
+        st.error(f"Ошибка архивации: {str(e)}")
+        return False
+
+json_str = json.dumps(st.session_state.data, ensure_ascii=False, indent=4)
+if len(json_str) > 500000:  # 500KB
+    archive_data()
