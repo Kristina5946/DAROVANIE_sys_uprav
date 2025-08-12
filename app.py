@@ -51,6 +51,7 @@ if not os.path.exists(DATA_FILE):
         'parents': [],
         'payments': [],
         'schedule': [],
+        'individual_lessons': [],
         'recurring_lessons': [],
         'materials': [],
         'attendance': {},
@@ -221,6 +222,7 @@ if 'data' not in st.session_state:
         'parents': [],
         'payments': [],
         'schedule': [],
+        'individual_lessons': [],
         'recurring_lessons': [],
         'materials': [],
         'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
@@ -348,6 +350,46 @@ def calculate_age(birth_date):
     
     today = date.today()
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+def add_individual_lesson(student_id, teacher_id, direction_name, date_str, start_time, end_time, room=None):
+    """Добавляет индивидуальное занятие с проверкой занятости"""
+    lessons = st.session_state.data.get("individual_lessons", [])
+
+    # Проверка, что нет у преподавателя другого занятия в это время
+    for lesson in lessons:
+        if lesson["teacher_id"] == teacher_id and lesson["date"] == date_str:
+            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
+                st.error("Этот преподаватель уже занят в это время.")
+                return False
+
+    # Проверка, что у ученика нет другого занятия в это время
+    for lesson in lessons:
+        if lesson["student_id"] == student_id and lesson["date"] == date_str:
+            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
+                st.error("У ученика уже есть занятие в это время.")
+                return False
+
+    # Проверка свободного класса для направления
+    for lesson in lessons:
+        if lesson.get("room") == room and lesson["date"] == date_str:
+            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
+                st.error("Этот класс уже занят.")
+                return False
+
+    lessons.append({
+        "id": str(uuid.uuid4()),
+        "student_id": student_id,
+        "teacher_id": teacher_id,
+        "direction": direction_name,
+        "date": date_str,
+        "start_time": start_time,
+        "end_time": end_time,
+        "room": room
+    })
+
+    st.session_state.data["individual_lessons"] = lessons
+    save_data(st.session_state.data)
+    st.success("Индивидуальное занятие добавлено!")
+    return True
 
 def suggest_directions(age, gender=None):
     """Suggest directions based on age and optional gender."""
@@ -362,13 +404,34 @@ def suggest_directions(age, gender=None):
 
 # Добавьте эту функцию в ваш код для просмотра истории
 def show_gist_history():
-    g = Github(st.secrets["GITHUB_TOKEN"])
-    gist = g.get_gist(st.secrets["GIST_ID"])
-    st.write("Последние изменения:")
-    
-    for version in gist.history:
-        st.write(f"Версия от {version.committed_at}:")
-        st.code(version.files["center_data.json"].content[:200] + "...")  # Показываем начало файла
+    """Выводит историю изменений Gist через GitHub API"""
+    gist_id = st.secrets["GIST_ID"]
+    commits_url = f"{GITHUB_API}/gists/{gist_id}/commits"
+
+    try:
+        commits_resp = requests.get(commits_url, headers=github_headers())
+        commits_resp.raise_for_status()
+        commits = commits_resp.json()
+
+        st.write("Последние изменения:")
+        for commit in commits:
+            commit_id = commit["version"]
+            committed_at = commit["committed_at"]
+
+            # Загружаем содержимое конкретной версии
+            gist_version_url = f"{GITHUB_API}/gists/{gist_id}/{commit_id}"
+            gist_version_resp = requests.get(gist_version_url, headers=github_headers())
+            gist_version_resp.raise_for_status()
+
+            files = gist_version_resp.json().get("files", {})
+            content = files.get("center_data.json", {}).get("content", "")
+
+            st.write(f"Версия от {committed_at}:")
+            st.code(content[:200] + "...")  # Показываем начало файла
+
+    except Exception as e:
+        st.error(f"Ошибка при загрузке истории Gist: {str(e)}")
+
 # Проверка соединения с GitHub (только для админов)
 if st.session_state.get('authenticated') and st.session_state.role == 'admin':
     if st.sidebar.button("Проверить GitHub соединение"):
@@ -676,23 +739,31 @@ def show_student_card(student_id):
             st.write(f"👪 Родитель: {parent.get('name')} | 📞 {parent.get('phone')}")
 
         st.subheader("🎯 Направления")
-        for d in student.get("directions", []):
+
+        # Гарантируем, что directions — список
+        if not isinstance(student.get("directions"), list):
+            student["directions"] = [student["directions"]] if student.get("directions") else []
+
+        # Отображаем направления с кнопкой отписки
+        for d in student["directions"]:
             with st.form(f"unassign_form_{student['id']}_{d}"):
                 if st.form_submit_button(f"❌ Отписать от {d}"):
-                    student['directions'].remove(d)
+                    student["directions"] = [x for x in student["directions"] if x != d]
                     save_data(st.session_state.data)
                     st.success(f"Ученик отписан от {d}")
                     st.rerun()
 
-        available = [d['name'] for d in st.session_state.data['directions'] if d['name'] not in student.get("directions", [])]
+        # Добавление направления
+        available = [d['name'] for d in st.session_state.data['directions'] if d['name'] not in student["directions"]]
         if available:
             with st.form(f"assign_dir_form_{student['id']}"):
                 new_dir = st.selectbox("Добавить направление", available, key=f"dir_sel_{student['id']}")
                 if st.form_submit_button("Добавить"):
-                    student['directions'].append(new_dir)
+                    student["directions"].append(new_dir)
                     save_data(st.session_state.data)
                     st.success(f"Добавлено направление {new_dir}")
                     st.rerun()
+
 
         st.subheader("💳 Оплаты")
         payments = [p for p in st.session_state.data['payments'] if p['student_id'] == student['id']]
@@ -1330,6 +1401,22 @@ def show_schedule_page():
                     st.rerun()
     else:
         st.info(f"На {russian_day} занятий нет.")
+    # === Индивидуальные занятия ===
+    st.subheader("👤 Индивидуальные занятия")
+    individual_lessons = st.session_state.data.get("individual_lessons", [])
+    if individual_lessons:
+        selected_date_str = selected_date.strftime("%Y-%m-%d")
+        daily_individual = [l for l in individual_lessons if l["date"] == selected_date_str]
+
+        if daily_individual:
+            for lesson in sorted(daily_individual, key=lambda x: x["start_time"]):
+                student = next((s for s in st.session_state.data['students'] if s['id'] == lesson['student_id']), None)
+                teacher = next((t for t in st.session_state.data['teachers'] if t['id'] == lesson['teacher_id']), None)
+                st.write(f"{lesson['start_time']}–{lesson['end_time']} | {lesson['direction']} | {student['name']} (преп. {teacher['name']})")
+        else:
+            st.info("На этот день индивидуальных занятий нет.")
+    else:
+        st.info("Индивидуальные занятия ещё не запланированы.")
 
     # === Общее расписание ===
     st.subheader("📋 Общее расписание")
@@ -2109,145 +2196,151 @@ def show_data_management_page():
                 file_name=f"center_data_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
+import requests
+
+GITHUB_API = "https://api.github.com"
+
+def github_headers():
+    return {
+        "Authorization": f"token {st.secrets['GITHUB_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
 def show_version_history_page():
-    """Страница для просмотра истории изменений данных"""
+    """Страница для просмотра истории изменений данных через GitHub API"""
     st.header("🕰 История версий данных")
-    
+
     try:
-        g = Github(st.secrets["GITHUB_TOKEN"])
-        gist = g.get_gist(st.secrets["GIST_ID"])
-        
-        # Получаем все версии gist
-        versions = sorted(gist.history, key=lambda x: x.committed_at, reverse=True)
-        
-        if not versions:
+        gist_id = st.secrets["GIST_ID"]
+        commits_url = f"{GITHUB_API}/gists/{gist_id}/commits"
+        commits_resp = requests.get(commits_url, headers=github_headers())
+        commits_resp.raise_for_status()
+
+        commits = commits_resp.json()
+        if not commits:
             st.info("История изменений не найдена")
             return
-        
-        # Показываем последние 10 версий
-        st.subheader(f"Последние изменения (всего {len(versions)} версий)")
-        
-        for i, version in enumerate(versions[:10]):
-            with st.expander(f"Версия от {version.committed_at.strftime('%Y-%m-%d %H:%M')}"):
+
+        st.subheader(f"Последние изменения (всего {len(commits)} версий)")
+
+        for i, commit in enumerate(commits[:10]):
+            commit_id = commit["version"]
+            committed_at = commit["committed_at"]
+
+            with st.expander(f"Версия от {committed_at}"):
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    # Показываем первые 10 строк изменений
-                    content = version.files["center_data.json"].content
+                    # Загружаем содержимое файла этой версии
+                    gist_version_url = f"{GITHUB_API}/gists/{gist_id}/{commit_id}"
+                    gist_version_resp = requests.get(gist_version_url, headers=github_headers())
+                    gist_version_resp.raise_for_status()
+                    files = gist_version_resp.json()["files"]
+                    content = files.get("center_data.json", {}).get("content", "")
                     st.code("\n".join(content.split("\n")[:10]))
-                    
+
                 with col2:
-                    # Кнопка для просмотра полной версии
                     if st.button("Просмотреть", key=f"view_{i}"):
                         st.session_state.viewing_version = content
                         st.session_state.page = "view_version"
                         st.rerun()
-                    
-                    # Кнопка восстановления
+
                     if st.button("Восстановить", key=f"restore_{i}"):
                         if st.session_state.role != 'admin':
                             st.warning("Только администратор может восстанавливать версии")
                         else:
-                            confirm = st.checkbox(f"Подтвердите восстановление версии от {version.committed_at}")
+                            confirm = st.checkbox(f"Подтвердите восстановление версии от {committed_at}")
                             if confirm:
                                 restored_data = json.loads(content)
                                 save_data(restored_data)
                                 st.success("Версия восстановлена! Обновите страницу.")
                                 time.sleep(2)
                                 st.rerun()
-        
-        # Пагинация
-        if len(versions) > 10:
-            st.write(f"Показано 10 из {len(versions)} версий")
-            
+
+        if len(commits) > 10:
+            st.write(f"Показано 10 из {len(commits)} версий")
+
     except Exception as e:
         st.error(f"Ошибка при загрузке истории: {str(e)}")
 
 def show_data_archives_page():
-    """Страница для управления архивными копиями данных"""
+    """Страница для управления архивными копиями данных через GitHub API"""
     st.header("📦 Архивы данных")
-    
-    # Инициализация списка архивов, если его нет
-    if '_archives' not in st.session_state.data:
-        st.session_state.data['_archives'] = []
+
+    gist_api = "https://api.github.com/gists"
+
+    # Инициализация списка архивов
+    if "_archives" not in st.session_state.data:
+        st.session_state.data["_archives"] = []
         save_data(st.session_state.data)
-    
+
     # Создание нового архива
     with st.expander("➕ Создать новый архив", expanded=False):
         archive_name = st.text_input("Название архива*", placeholder="Архив на 2024-01-01")
         archive_desc = st.text_area("Описание", placeholder="Резервная копия перед обновлением системы")
-        
+
         if st.button("Создать архивную копию"):
             if not archive_name:
                 st.error("Пожалуйста, укажите название архива")
             else:
                 try:
-                    # Подготовка данных для архива
                     archive_data = json.dumps(st.session_state.data, indent=4, ensure_ascii=False)
-                    
-                    # Создаем новый gist с архивом
-                    g = Github(st.secrets["GITHUB_TOKEN"])
-                    archive_gist = g.create_gist(
-                        public=False,
-                        files={"archive.json": InputFileContent(archive_data)},
-                        description=f"{archive_name} | {archive_desc}"
-                    )
-                    
-                    # Добавляем запись в список архивов
+                    payload = {
+                        "description": f"{archive_name} | {archive_desc}",
+                        "public": False,
+                        "files": {
+                            "archive.json": {"content": archive_data}
+                        }
+                    }
+                    resp = requests.post(gist_api, headers=github_headers(), json=payload)
+                    resp.raise_for_status()
+                    gist_info = resp.json()
+
                     new_archive = {
-                        'id': archive_gist.id,
+                        'id': gist_info["id"],
                         'name': archive_name,
                         'description': archive_desc,
-                        'url': archive_gist.html_url,
+                        'url': gist_info["html_url"],
                         'created': datetime.now().strftime("%Y-%m-%d %H:%M"),
                         'size': len(archive_data),
                         'filename': "archive.json"
                     }
-                    
-                    st.session_state.data['_archives'].append(new_archive)
+
+                    st.session_state.data["_archives"].append(new_archive)
                     save_data(st.session_state.data)
-                    
-                    st.success(f"""
-                    Архив успешно создан!
-                    - ID: `{archive_gist.id}`
-                    - Размер: {new_archive['size']/1024:.1f} KB
-                    - [Открыть на GitHub]({archive_gist.html_url})
-                    """)
+
+                    st.success(f"Архив успешно создан! [Открыть]({gist_info['html_url']})")
                     st.rerun()
-                    
+
                 except Exception as e:
                     st.error(f"Ошибка при создании архива: {str(e)}")
-                    st.error("Убедитесь, что:")
-                    st.error("1. GitHub токен корректный и имеет права на создание gists")
-                    st.error("2. Интернет-соединение стабильное")
 
-    # Список существующих архивов
+    # Список архивов
     st.subheader("Существующие архивы")
-    
-    if not st.session_state.data['_archives']:
+    if not st.session_state.data["_archives"]:
         st.info("Архивные копии не создавались")
     else:
-        for archive in reversed(st.session_state.data['_archives']):
+        for archive in reversed(st.session_state.data["_archives"]):
             with st.container(border=True):
                 col1, col2, col3 = st.columns([4, 1, 1])
                 with col1:
-                    st.subheader(archive['name'])
-                    st.caption(archive['description'])
+                    st.subheader(archive["name"])
+                    st.caption(archive["description"])
                     st.write(f"📅 {archive['created']} | 📏 {archive['size']/1024:.1f} KB")
                     st.markdown(f"[🔗 Открыть в GitHub]({archive['url']})")
-                
+
                 with col2:
-                    # Кнопка восстановления
                     if st.button("↩️ Восстановить", key=f"restore_{archive['id']}"):
-                        if st.session_state.role != 'admin':
+                        if st.session_state.role != "admin":
                             st.warning("Только администратор может восстанавливать архивы")
                         else:
                             if st.checkbox(f"Подтвердите восстановление архива '{archive['name']}'"):
                                 try:
-                                    g = Github(st.secrets["GITHUB_TOKEN"])
-                                    gist = g.get_gist(archive['id'])
-                                    content = gist.files[archive['filename']].content
+                                    gist_url = f"{gist_api}/{archive['id']}"
+                                    gist_resp = requests.get(gist_url, headers=github_headers())
+                                    gist_resp.raise_for_status()
+                                    files = gist_resp.json().get("files", {})
+                                    content = files.get(archive['filename'], {}).get("content", "")
                                     restored_data = json.loads(content)
-                                    
                                     st.session_state.data = restored_data
                                     save_data(st.session_state.data)
                                     st.success("Архив успешно восстановлен!")
@@ -2255,23 +2348,21 @@ def show_data_archives_page():
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Ошибка восстановления: {str(e)}")
-                
+
                 with col3:
-                    # Кнопка удаления
                     if st.button("🗑️ Удалить", key=f"del_{archive['id']}"):
-                        if st.session_state.role != 'admin':
+                        if st.session_state.role != "admin":
                             st.warning("Только администратор может удалять архивы")
                         else:
                             if st.checkbox(f"Вы уверены, что хотите удалить архив '{archive['name']}'?"):
                                 try:
-                                    g = Github(st.secrets["GITHUB_TOKEN"])
-                                    gist = g.get_gist(archive['id'])
-                                    gist.delete()
-                                    
-                                    # Удаляем из списка
-                                    st.session_state.data['_archives'] = [
-                                        a for a in st.session_state.data['_archives']
-                                        if a['id'] != archive['id']
+                                    gist_url = f"{gist_api}/{archive['id']}"
+                                    del_resp = requests.delete(gist_url, headers=github_headers())
+                                    del_resp.raise_for_status()
+
+                                    st.session_state.data["_archives"] = [
+                                        a for a in st.session_state.data["_archives"]
+                                        if a["id"] != archive["id"]
                                     ]
                                     save_data(st.session_state.data)
                                     st.success("Архив удален!")
@@ -2502,465 +2593,248 @@ def show_reception_helper():
                 else:
                     st.info("К сожалению, нет подходящих направлений для указанных параметров.")
     with tab2:
-        st.subheader("🔄 Перенос занятий")
-        
-        # 1. Выбор занятия для переноса
-        current_schedule = st.session_state.data['schedule']
-        if not current_schedule:
-            st.info("Нет занятий для переноса.")
-            return
-            
-        # Фильтр по дате (последние 7 дней)
+        st.subheader("🔄 Перенос занятий (отработка пропущенных)")
+
+        current_schedule = st.session_state.data.get('schedule', [])
+        attendance = st.session_state.data.get('attendance', {})
+
+        if not current_schedule or not attendance:
+            st.info("Нет данных для переноса.")
+            st.stop()
+
         today = date.today()
         week_ago = today - timedelta(days=7)
-        
-        # Получаем список пропущенных занятий (из attendance)
-        missed_lessons = []
-        attendance = st.session_state.data.get('attendance', {})
-        
+
+        # Ищем пропущенные занятия
+        missed_records = []
         for date_str, lessons in attendance.items():
             lesson_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             if week_ago <= lesson_date <= today:
                 for lesson_id, students in lessons.items():
-                    present_count = sum(1 for s in students.values() if s.get('present'))
-                    if present_count == 0:  # Никто не пришел
-                        lesson = next((l for l in current_schedule if l['id'] == lesson_id), None)
-                        if lesson:
-                            missed_lessons.append({
-                                'date': date_str,
-                                'lesson': lesson,
-                                'students': [s for s in students.keys()]
-                            })
-        
-        if not missed_lessons:
+                    for student_id, info in students.items():
+                        if not info.get('present', False):
+                            lesson = next((l for l in current_schedule if l['id'] == lesson_id), None)
+                            if lesson:
+                                missed_records.append({
+                                    "date": date_str,
+                                    "lesson": lesson,
+                                    "student_id": student_id
+                                })
+
+        if not missed_records:
             st.info("Нет пропущенных занятий за последнюю неделю.")
-            return
-            
-        # Выбор занятия для переноса
-        lesson_options = {
-            f"{ml['lesson']['direction']} ({ml['date']}, {ml['lesson']['teacher']})": ml 
-            for ml in missed_lessons
+            st.stop()
+
+        # Выбор пропущенного занятия
+        missed_options = {
+            f"{mr['lesson']['direction']} ({mr['date']}, {mr['lesson']['teacher']}) - {mr['student_id']}": mr
+            for mr in missed_records
         }
-        selected_lesson = st.selectbox(
-            "Выберите занятие для переноса",
-            options=list(lesson_options.keys())
-        )
-        lesson_data = lesson_options[selected_lesson]
-        
-        # 2. Поиск свободных окон
-        st.subheader("🔍 Поиск свободных окон")
-        
-        # Получаем информацию о классе для этого направления
-        direction = next(
-            (d for d in st.session_state.data['directions'] 
-             if d['name'] == lesson_data['lesson']['direction']),
-            None
-        )
-        
-        if not direction:
-            st.error("Направление не найдено!")
-            return
-            
-        # Определяем подходящий класс
-        classrooms = st.session_state.data.get('classrooms', [])
-        suitable_classroom = None
-        for room in classrooms:
-            if lesson_data['lesson']['direction'] in room['directions']:
-                suitable_classroom = room
-                break
-        else:
-            # Если направление не привязано к конкретному классу, выбираем по количеству учеников
-            students_count = len(lesson_data['students'])
-            if students_count <= 6:
-                suitable_classroom = next((r for r in classrooms if r['name'] == 'Малый класс'), None)
-            else:
-                suitable_classroom = next((r for r in classrooms if r['name'] == 'Большой класс'), None)
-        
-        if not suitable_classroom:
-            st.error("Не удалось определить подходящий класс!")
-            return
-            
-        st.write(f"**Подходящий класс:** {suitable_classroom['name']}")
-        
-        # 3. Поиск свободных окон у преподавателя
-        teacher = next(
-            (t for t in st.session_state.data['teachers'] 
-             if t['name'] == lesson_data['lesson']['teacher']),
-            None
-        )
-        
-        if not teacher:
-            st.error("Преподаватель не найден!")
-            return
-            
-        # Получаем текущее расписание преподавателя
-        teacher_schedule = [
-            l for l in current_schedule 
-            if l['teacher'] == teacher['name']
+        selected_key = st.selectbox("Выберите пропущенное занятие", options=list(missed_options.keys()))
+        selected_missed = missed_options[selected_key]
+
+        student = next((s for s in st.session_state.data['students'] if s['id'] == selected_missed['student_id']), None)
+        if not student:
+            st.error("Ученик не найден.")
+            st.stop()
+
+        st.write(f"**Ученик:** {student.get('name')}")
+
+        # Ищем подходящие занятия для отработки (по тому же направлению, в будущем)
+        suitable_lessons = [
+            l for l in current_schedule
+            if l['direction'] == selected_missed['lesson']['direction']
+            and datetime.strptime(l.get('date', today.strftime("%Y-%m-%d")), "%Y-%m-%d").date() > today
         ]
-        
-        # Предлагаем дни для переноса (следующие 7 дней)
-        possible_days = []
-        for i in range(1, 8):
-            new_date = today + timedelta(days=i)
-            day_name = new_date.strftime("%A")
-            russian_day = {
-                "Monday": "Понедельник",
-                "Tuesday": "Вторник",
-                "Wednesday": "Среда",
-                "Thursday": "Четверг",
-                "Friday": "Пятница",
-                "Saturday": "Суббота",
-                "Sunday": "Воскресенье"
-            }.get(day_name, day_name)
-            
-            # Проверяем, есть ли у преподавателя занятия в этот день
-            teacher_busy = any(
-                l['day'] == russian_day 
-                for l in teacher_schedule
-            )
-            
-            if not teacher_busy:
-                possible_days.append({
-                    'date': new_date,
-                    'day_name': russian_day
-                })
-        
-        if not possible_days:
-            st.warning("У преподавателя нет свободных дней в ближайшую неделю.")
-            return
-            
-        # 4. Выбор времени
-        selected_day = st.selectbox(
-            "Выберите день",
-            options=[f"{d['day_name']} ({d['date'].strftime('%d.%m.%Y')}" for d in possible_days],
-            format_func=lambda x: x
-        )
-        
-        # Получаем выбранный день
-        selected_day_data = possible_days[[
-            f"{d['day_name']} ({d['date'].strftime('%d.%m.%Y')}" 
-            for d in possible_days
-        ].index(selected_day)]
-        
-        # Предлагаем временные слоты
-        time_slots = [
-            "09:00", "10:00", "11:00", "12:00", "13:00", 
-            "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"
-        ]
-        
-        # Фильтруем слоты, которые уже заняты в выбранном классе
-        occupied_slots = []
-        for lesson in current_schedule:
-            if lesson['day'] == selected_day_data['day_name']:
-                # Проверяем, есть ли у занятия указанный класс
-                if 'classroom' in lesson and lesson['classroom'] == suitable_classroom['id']:
-                    occupied_slots.append((lesson['start_time'], lesson['end_time']))
-        
-        available_slots = []
-        for slot in time_slots:
-            slot_start = datetime.strptime(slot, "%H:%M").time()
-            slot_end = (datetime.strptime(slot, "%H:%M") + timedelta(minutes=45)).time()
-            
-            # Проверяем, не пересекается ли слот с занятыми
-            conflict = False
-            for occupied_start, occupied_end in occupied_slots:
-                occ_start = datetime.strptime(occupied_start, "%H:%M").time()
-                occ_end = datetime.strptime(occupied_end, "%H:%M").time()
-                
-                if not (slot_end <= occ_start or slot_start >= occ_end):
-                    conflict = True
-                    break
-            
-            if not conflict:
-                available_slots.append(slot)
-        
-        if not available_slots:
-            st.warning("Нет свободных временных слотов в выбранный день.")
-            return
-            
-        selected_time = st.selectbox("Выберите время", options=available_slots)
-        
-        # 5. Подтверждение и сохранение
-        if st.button("Перенести занятие"):
-            # Создаем новое занятие в расписании
-            new_lesson = {
-                'id': str(uuid.uuid4()),
-                'direction': lesson_data['lesson']['direction'],
-                'teacher': lesson_data['lesson']['teacher'],
-                'start_time': selected_time,
-                'end_time': (datetime.strptime(selected_time, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M"),
-                'day': selected_day_data['day_name'],
-                'classroom': suitable_classroom['id'],
-                'rescheduled_from': lesson_data['lesson']['id']
+
+        if not suitable_lessons:
+            st.warning("Нет доступных занятий для отработки.")
+            st.stop()
+
+        lesson_choices = {
+            f"{l['direction']} - {l.get('date', 'без даты')} {l['start_time']} ({l['teacher']})": l
+            for l in suitable_lessons
+        }
+        selected_lesson_key = st.selectbox("Выберите занятие для отработки", options=list(lesson_choices.keys()))
+        selected_lesson = lesson_choices[selected_lesson_key]
+
+        # Подтверждение
+        if st.button("Записать на отработку"):
+            lesson_date_str = selected_lesson.get('date')
+            if not lesson_date_str:
+                st.error("Выбранное занятие не имеет даты.")
+                st.stop()
+
+            # Добавляем ученика в attendance этого занятия
+            st.session_state.data['attendance'].setdefault(lesson_date_str, {})
+            st.session_state.data['attendance'][lesson_date_str].setdefault(selected_lesson['id'], {})
+            st.session_state.data['attendance'][lesson_date_str][selected_lesson['id']][student['id']] = {
+                "present": False,
+                "note": f"Отработка за {selected_missed['date']}"
             }
-            
-            st.session_state.data['schedule'].append(new_lesson)
-            
-            # Обновляем посещения (отмечаем как перенесенные)
-            date_key = lesson_data['date']
-            lesson_id = lesson_data['lesson']['id']
-            
-            if date_key in st.session_state.data['attendance']:
-                if lesson_id in st.session_state.data['attendance'][date_key]:
-                    for student_id in st.session_state.data['attendance'][date_key][lesson_id]:
-                        st.session_state.data['attendance'][date_key][lesson_id][student_id]['note'] = \
-                            f"Перенесено на {selected_day_data['day_name']} {selected_time}"
-            
+
             save_data(st.session_state.data)
-            st.success("Занятие успешно перенесено!")
+            st.success("Ученик записан на отработку!")
             st.rerun()
-    # Новая вкладка 3 - Запись на занятия
+
+    # Новая вкладка 3 - Запись на занятия 
     with tab3:
         st.subheader("📝 Запись на индивидуальные занятия")
-        
-        # 1. Выбор ученика
+
+        # === 1. Выбор ученика ===
         students = st.session_state.data.get('students', [])
         if not students:
-            st.warning("Внимание: Нет учеников в базе данных. Добавьте учеников, чтобы записать их на занятия.")
-            return # Прерывает выполнение, если нет учеников
+            st.warning("Нет учеников в базе данных. Добавьте учеников для записи.")
+            st.stop()
 
         student_options = {s['id']: s['name'] for s in students}
         selected_student_id = st.selectbox(
             "Выберите ученика",
             options=list(student_options.keys()),
             format_func=lambda x: student_options[x],
-            key="enroll_student_select"
+            key="indiv_enroll_student"
         )
 
-        # 2. Выбор направления (только индивидуальные)
+        # === 2. Выбор направления ===
         directions_data = st.session_state.data.get('directions', [])
         individual_directions = [
             d for d in directions_data
-            if d and "Индивидуальные занятия" in d.get('name', '')
+            if "Индивидуальные" in d.get('name', '')
         ]
-
         if not individual_directions:
-            st.warning("Внимание: Нет индивидуальных направлений в базе данных. Создайте их в разделе 'Направления'.")
-            return # Прерывает выполнение, если нет индивидуальных направлений
+            st.warning("Нет индивидуальных направлений. Создайте их в разделе 'Направления'.")
+            st.stop()
 
         direction_options = {d['id']: d['name'] for d in individual_directions}
         selected_direction_id = st.selectbox(
-            "Выберите направление (только индивидуальные)",
+            "Выберите направление",
             options=list(direction_options.keys()),
             format_func=lambda x: direction_options[x],
-            key="enroll_direction_select"
+            key="indiv_enroll_direction"
         )
         selected_direction = next((d for d in individual_directions if d['id'] == selected_direction_id), None)
 
-        if not selected_direction:
-            st.error("Ошибка: Выбранное направление не найдено. Проверьте данные.")
-            return # Прерывает выполнение, если направление не найдено
-
-        # 3. Выбор преподавателя
+        # === 3. Выбор преподавателя ===
         teachers_data = st.session_state.data.get('teachers', [])
         teachers_for_direction = [
             t for t in teachers_data
-            if t and selected_direction['name'] in t.get('directions', [])
+            if selected_direction['name'] in t.get('directions', [])
         ]
-
         if not teachers_for_direction:
-            st.error(f"Ошибка: Нет преподавателей для выбранного направления '{selected_direction['name']}'. Добавьте их в разделе 'Преподаватели'.")
-            return # Прерывает выполнение, если нет преподавателей для направления
+            st.error(f"Нет преподавателей для направления '{selected_direction['name']}'.")
+            st.stop()
 
         teacher_options = {t['id']: t['name'] for t in teachers_for_direction}
         selected_teacher_id = st.selectbox(
             "Выберите преподавателя",
             options=list(teacher_options.keys()),
             format_func=lambda x: teacher_options[x],
-            key="enroll_teacher_select"
+            key="indiv_enroll_teacher"
         )
         selected_teacher = next((t for t in teachers_for_direction if t['id'] == selected_teacher_id), None)
 
-        if not selected_teacher:
-            st.error("Ошибка: Выбранный преподаватель не найден. Проверьте данные.")
-            return # Прерывает выполнение, если преподаватель не найден
-
-        # 4. Поиск свободных окон
-        st.subheader("🔍 Поиск свободных окон")
-
-        # Определяем подходящий класс
-        suitable_classroom = None
+        # === 4. Определение подходящего класса ===
         classrooms = st.session_state.data.get('classrooms', [])
-
-        for room in classrooms:
-            if room and selected_direction['name'] in room.get('directions', []):
-                suitable_classroom = room
-                break
-        else:
-            # Если направление не привязано к конкретному классу, выбираем Малый класс по умолчанию
-            suitable_classroom = next(
-                (r for r in classrooms if r and r.get('name') == 'Малый класс'),
-                None
-            )
-
+        suitable_classroom = next(
+            (room for room in classrooms if selected_direction['name'] in room.get('directions', [])),
+            None
+        )
         if not suitable_classroom:
-            st.error("Ошибка: Не удалось определить подходящий класс для этого направления. Проверьте классы и их привязки.")
-            return # Прерывает выполнение, если класс не найден
+            suitable_classroom = next((r for r in classrooms if r.get('name') == 'Малый класс'), None)
+        if not suitable_classroom:
+            st.error("Не удалось определить класс для этого направления.")
+            st.stop()
 
         st.write(f"**Предлагаемый класс:** {suitable_classroom.get('name', 'Неизвестно')}")
 
-        # Календарь для выбора даты
+        # === 5. Выбор даты ===
         selected_date = st.date_input(
-            "Выберите дату занятия",
+            "Выберите дату",
             min_value=date.today(),
-            max_value=date.today() + timedelta(days=90), # Можно увеличить диапазон
-            key="enroll_date_select"
+            max_value=date.today() + timedelta(days=90),
+            key="indiv_enroll_date"
         )
+        date_str = selected_date.strftime("%Y-%m-%d")
 
-        # Преобразуем дату в день недели
-        day_name = selected_date.strftime("%A")
-        russian_day = {
-            "Monday": "Понедельник", "Tuesday": "Вторник", "Wednesday": "Среда",
-            "Thursday": "Четверг", "Friday": "Пятница", "Saturday": "Суббота", "Sunday": "Воскресенье"
-        }.get(day_name, day_name)
-
-        # Проверяем расписание преподавателя
+        # === 6. Проверка занятости ===
         all_schedule = st.session_state.data.get('schedule', [])
-        teacher_schedule = [
-            l for l in all_schedule
-            if l and l.get('teacher') == selected_teacher.get('name')
-            and l.get('day') == russian_day
+        all_indiv = st.session_state.data.get('individual_lessons', [])
+
+        # 6.1 — Занятость преподавателя (групповые + индивидуальные)
+        teacher_busy = [
+            l for l in all_schedule if l.get('teacher') == selected_teacher['name'] and l.get('day') == selected_date.strftime("%A")
+        ] + [
+            l for l in all_indiv if l.get('teacher_id') == selected_teacher_id and l.get('date') == date_str
         ]
 
-        # Проверка загруженности преподавателя
-        max_lessons_per_day = 6 # Пример, можно настроить
-        if len(teacher_schedule) >= max_lessons_per_day:
-            st.warning(f"Внимание: Преподаватель '{selected_teacher.get('name')}' уже имеет {len(teacher_schedule)} занятий в {russian_day} (максимум {max_lessons_per_day}).")
-            # НЕ return здесь, чтобы показать занятость класса
-            # return
-
-        # Проверяем занятость класса
-        classroom_schedule = [
-            l for l in all_schedule
-            if l and l.get('classroom') == suitable_classroom.get('id')
-            and l.get('day') == russian_day
+        # 6.2 — Занятость класса
+        class_busy = [
+            l for l in all_schedule if l.get('classroom') == suitable_classroom['id'] and l.get('day') == selected_date.strftime("%A")
+        ] + [
+            l for l in all_indiv if l.get('room') == suitable_classroom['id'] and l.get('date') == date_str
         ]
 
-        # Визуализация занятости
-        st.subheader(f"📅 Занятость {russian_day} ({selected_date.strftime('%d.%m.%Y')})")
+        # 6.3 — Занятость ученика
+        student_busy = [
+            l for l in all_indiv if l.get('student_id') == selected_student_id and l.get('date') == date_str
+        ]
 
-        # Создаем временную шкалу (9:00-20:00 с шагом 15 минут)
-        time_slots_full = [f"{h:02d}:{m:02d}" for h in range(9, 20) for m in [0, 15, 30, 45]]
+        # === 7. Временные слоты ===
+        st.subheader(f"📅 Занятость на {selected_date.strftime('%d.%m.%Y')}")
+        time_slots_full = [f"{h:02d}:{m:02d}" for h in range(9, 20) for m in (0, 15, 30, 45)]
 
-        schedule_df = pd.DataFrame(index=time_slots_full)
-        schedule_df['Преподаватель'] = "Свободно"
-        schedule_df['Класс'] = "Свободно"
+        def slot_free(slot_str, busy_list):
+            slot_dt = datetime.strptime(slot_str, "%H:%M")
+            s_time = slot_dt.time()
+            e_time = (slot_dt + timedelta(minutes=45)).time()
+            for lesson in busy_list:
+                try:
+                    start = datetime.strptime(lesson.get('start_time'), "%H:%M").time()
+                    end = datetime.strptime(lesson.get('end_time'), "%H:%M").time()
+                except Exception:
+                    continue
+                if not (e_time <= start or s_time >= end):
+                    return False
+            return True
 
-        # Заполняем занятые слоты преподавателя
-        for lesson in teacher_schedule:
-            try:
-                start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
-                end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
-                for slot_str in time_slots_full:
-                    slot_dt = datetime.strptime(slot_str, "%H:%M")
-                    slot_start_time = slot_dt.time()
-                    slot_end_time = (slot_dt + timedelta(minutes=45)).time() # Предполагаем 45-минутные занятия
-
-                    # Проверяем пересечение временных интервалов
-                    if not (slot_end_time <= start or slot_start_time >= end):
-                        schedule_df.at[slot_str, 'Преподаватель'] = f"{lesson.get('direction', 'Занятие')} (занят)"
-            except ValueError:
-                st.warning(f"Некорректный формат времени в расписании преподавателя: {lesson.get('start_time')}-{lesson.get('end_time')}")
-                continue
-            except KeyError:
-                st.warning(f"Отсутствуют ключи времени в расписании преподавателя: {lesson}")
-                continue
-
-        # Заполняем занятые слоты класса
-        for lesson in classroom_schedule:
-            try:
-                start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
-                end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
-                for slot_str in time_slots_full:
-                    slot_dt = datetime.strptime(slot_str, "%H:%M")
-                    slot_start_time = slot_dt.time()
-                    slot_end_time = (slot_dt + timedelta(minutes=45)).time() # Предполагаем 45-минутные занятия
-
-                    # Проверяем пересечение временных интервалов
-                    if not (slot_end_time <= start or slot_start_time >= end):
-                        schedule_df.at[slot_str, 'Класс'] = f"{lesson.get('direction', 'Занято')} (занят)"
-            except ValueError:
-                st.warning(f"Некорректный формат времени в расписании класса: {lesson.get('start_time')}-{lesson.get('end_time')}")
-                continue
-            except KeyError:
-                st.warning(f"Отсутствуют ключи времени в расписании класса: {lesson}")
-                continue
-
-        # Отображаем таблицу занятости
-        st.dataframe(schedule_df, use_container_width=True)
-
-        # 5. Выбор свободного времени
-        available_slots = []
-        for slot_str in time_slots_full:
-            try:
-                slot_dt = datetime.strptime(slot_str, "%H:%M")
-                slot_start_time = slot_dt.time()
-                slot_end_time = (slot_dt + timedelta(minutes=45)).time()
-
-                teacher_free = True
-                for lesson in teacher_schedule:
-                    lesson_start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
-                    lesson_end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
-                    if not (slot_end_time <= lesson_start or slot_start_time >= lesson_end):
-                        teacher_free = False
-                        break
-
-                classroom_free = True
-                for lesson in classroom_schedule:
-                    lesson_start = datetime.strptime(lesson.get('start_time', ''), "%H:%M").time()
-                    lesson_end = datetime.strptime(lesson.get('end_time', ''), "%H:%M").time()
-                    if not (slot_end_time <= lesson_start or slot_start_time >= lesson_end):
-                        classroom_free = False
-                        break
-
-                if teacher_free and classroom_free:
-                    available_slots.append(slot_str)
-            except ValueError:
-                # Пропускаем слоты с некорректным временем
-                continue
+        available_slots = [
+            slot for slot in time_slots_full
+            if slot_free(slot, teacher_busy) and slot_free(slot, class_busy) and slot_free(slot, student_busy)
+        ]
 
         if not available_slots:
-            st.info("Информация: Нет доступных свободных окон для записи на занятие в выбранный день с учетом занятости преподавателя и класса. Попробуйте другую дату или преподавателя.")
-            # НЕ return здесь, чтобы пользователь мог изменить ввод
-            # return
+            st.info("Нет доступных временных окон.")
+            st.stop()
 
-        selected_time = st.selectbox("Выберите доступное время для занятия", options=available_slots, key="enroll_time_select")
+        selected_time = st.selectbox("Выберите время", options=available_slots, key="indiv_enroll_time")
 
-        # 6. Подтверждение и сохранение
-        if st.button("Записать на занятие", key="enroll_lesson_button"):
-            if not selected_time:
-                st.warning("Пожалуйста, выберите время для записи на занятие.")
-            else:
-                # Создаем новое занятие
-                new_lesson = {
-                    'id': str(uuid.uuid4()),
-                    'direction': selected_direction['name'],
-                    'teacher': selected_teacher['name'],
-                    'start_time': selected_time,
-                    'end_time': (datetime.strptime(selected_time, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M"),
-                    'day': russian_day,
-                    'classroom': suitable_classroom['id'],
-                    'student_id': selected_student_id,
-                    'is_individual': True # Отмечаем, что это индивидуальное занятие
-                }
+        # === 8. Запись ===
+        if st.button("Записать на индивидуальное занятие", key="indiv_enroll_btn"):
+            start_time = selected_time
+            end_time = (datetime.strptime(selected_time, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M")
 
-                # Добавляем в расписание
-                if 'schedule' not in st.session_state.data:
-                    st.session_state.data['schedule'] = []
-                st.session_state.data['schedule'].append(new_lesson)
+            st.session_state.data.setdefault('individual_lessons', []).append({
+                "id": str(uuid.uuid4()),
+                "student_id": selected_student_id,
+                "teacher_id": selected_teacher_id,
+                "direction": selected_direction['name'],
+                "date": date_str,
+                "start_time": start_time,
+                "end_time": end_time,
+                "room": suitable_classroom['id']
+            })
 
-                # Добавляем направление ученику, если его еще нет
-                student = next((s for s in students if s.get('id') == selected_student_id), None)
-                if student:
-                    if 'directions' not in student:
-                        student['directions'] = []
-                    if selected_direction['name'] not in student['directions']:
-                        student['directions'].append(selected_direction['name'])
+            # Добавляем направление ученику
+            student = next((s for s in students if s['id'] == selected_student_id), None)
+            if student:
+                if not isinstance(student.get('directions'), list):
+                    student['directions'] = []
+                if selected_direction['name'] not in student['directions']:
+                    student['directions'].append(selected_direction['name'])
 
-                save_data(st.session_state.data) # Убедитесь, что save_data определена
-                st.success("Ученик успешно записан на занятие!")
-                st.rerun() # Перезагрузка страницы для отображения изменений
+            save_data(st.session_state.data)
+            st.success("Ученик успешно записан на индивидуальное занятие!")
+            st.rerun()
 
 # --- Main App Title and Navigation ---
 st.title("🏫 Система управления детским центром")
@@ -3117,4 +2991,3 @@ else:
         show_version_view_page()
     else:
         st.info("Выберите раздел в меню слева.")
-
