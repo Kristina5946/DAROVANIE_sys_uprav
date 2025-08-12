@@ -25,7 +25,12 @@ if not GITHUB_TOKEN or not GIST_ID:
     # Присваиваем пустые значения, чтобы избежать ошибок
     GITHUB_TOKEN = ""
     GIST_ID = ""
-
+# --- DEBUGGING SECRETS (REMOVE AFTER FIXING) ---
+st.header("Проверка секретов")
+st.write(f"Значение GITHUB_TOKEN: **{'<скрыто>' if st.secrets.get('GITHUB_TOKEN') else 'Токен не найден!'}**")
+st.write(f"Значение GIST_ID: **{st.secrets.get('GIST_ID')}**")
+st.write("---")
+# --- END DEBUGGING CODE ---
 # --- Configuration and Data Storage ---
 DATA_FILE = 'center_data.json'
 MEDIA_FOLDER = 'media'
