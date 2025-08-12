@@ -13,8 +13,6 @@ from io import StringIO
 import base64
 
 import requests
-from github import Github
-from github import InputFileContent
 
 # Конфигурация (используйте секреты Streamlit!)
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
@@ -82,28 +80,23 @@ def load_data():
         # 1. Пытаемся загрузить из GitHub
         if GITHUB_TOKEN and GIST_ID:
             try:
-                g = Github(GITHUB_TOKEN)
-                gist = g.get_gist(GIST_ID)
-                
-                # Проверяем наличие нужного файла
-                if "center_data.json" in gist.files:
-                    content = gist.files["center_data.json"].content
-                    
-                    # Важная проверка на пустоту
-                    if content.strip():
-                        try:
+                resp = requests.get(f"https://api.github.com/gists/{GIST_ID}", headers=github_headers())
+                if resp.status_code == 200:
+                    gist_data = resp.json()
+                    if "center_data.json" in gist_data["files"]:
+                        content = gist_data["files"]["center_data.json"]["content"]
+                        if content.strip():
                             remote_data = json.loads(content)
-                            
-                            # Проверка структуры данных
                             if isinstance(remote_data, dict) and 'students' in remote_data:
-                                st.success(f"Данные загружены из GitHub (обновлено: {gist.updated_at})")
+                                st.success(f"Данные загружены из GitHub (обновлено: {gist_data['updated_at']})")
                                 return remote_data
                             else:
                                 st.warning("Данные из GitHub имеют неверную структуру")
-                        except json.JSONDecodeError:
-                            st.warning("Не удалось декодировать данные из GitHub")
+                else:
+                    st.warning(f"Ошибка загрузки из GitHub: {resp.status_code} {resp.text}")
             except Exception as e:
                 st.warning(f"Ошибка загрузки из GitHub: {str(e)}")
+
                 
         # 2. Fallback на локальный файл
         if os.path.exists(DATA_FILE):
@@ -122,126 +115,98 @@ def load_data():
     st.warning("Используются начальные данные")
     return initial_data.copy()
 
-def get_github_client():
-    """Создает клиент GitHub с обработкой ошибок"""
+def github_headers():
+    """Возвращает заголовки для GitHub API"""
     if not GITHUB_TOKEN:
         st.warning("GitHub токен не настроен! Работаем локально.")
         return None
-    try:
-        return Github(GITHUB_TOKEN)
-    except Exception as e:
-        st.error(f"Ошибка подключения к GitHub: {e}")
-        return None
+    return {"Authorization": f"token {GITHUB_TOKEN}"}
+
 
 def archive_data():
     """Переносит старые данные в отдельный архивный Gist"""
     try:
         old_data = st.session_state.data.copy()
-        
-        # Удаляем временные данные перед архивацией
         for key in ['_temp', '_cache']:
             old_data.pop(key, None)
-            
-        # Сериализация с обработкой дат
+
         def json_serializer(obj):
             if isinstance(obj, (datetime, date)):
                 return obj.isoformat()
             raise TypeError(f"Type {type(obj)} not serializable")
-            
+
         json_str = json.dumps(old_data, indent=4, ensure_ascii=False, default=json_serializer)
-        
-        g = get_github_client()
-        if not g:
+
+        headers = github_headers()
+        if not headers:
             return False
-            
-        # Создаем новый архивный Gist
-        archive_gist = g.get_user().create_gist(
-            public=False,
-            files={"archive_center_data.json": InputFileContent(json_str)},
-            description=f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+        resp = requests.post(
+            "https://api.github.com/gists",
+            headers=headers,
+            json={
+                "description": f"Архив от {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                "public": False,
+                "files": {"archive_center_data.json": {"content": json_str}}
+            }
         )
-        
-        # Сохраняем ссылку на архив
-        if '_archives' not in st.session_state.data:
-            st.session_state.data['_archives'] = []
-            
-        st.session_state.data['_archives'].append({
-            'url': archive_gist.html_url,
-            'created': datetime.now().isoformat(),
-            'id': archive_gist.id,
-            'size': len(json_str)
-        })
-        
-        # Очищаем только устаревшие данные
-        st.session_state.data['payments'] = []
-        st.session_state.data['attendance'] = {}
-        
-        # Сохраняем изменения
-        if save_data(st.session_state.data):
-            st.success(f"Архив создан: {archive_gist.html_url}")
-            return True
+
+        if resp.status_code == 201:
+            gist_data = resp.json()
+            st.session_state.data.setdefault('_archives', []).append({
+                'url': gist_data['html_url'],
+                'created': datetime.now().isoformat(),
+                'id': gist_data['id'],
+                'size': len(json_str)
+            })
+            st.session_state.data['payments'] = []
+            st.session_state.data['attendance'] = {}
+            if save_data(st.session_state.data):
+                st.success(f"Архив создан: {gist_data['html_url']}")
+                return True
+        else:
+            st.error(f"Ошибка архивации: {resp.status_code} {resp.text}")
         return False
-        
     except Exception as e:
         st.error(f"Ошибка архивации: {str(e)}")
         return False
 
+
 def save_data(data):
-    """Улучшенная функция сохранения данных в GitHub Gist и локально"""
+    """Сохраняет данные локально и в Gist через API"""
     try:
-        # 1. Подготовка данных
         def json_serializer(obj):
             if isinstance(obj, (datetime, date)):
                 return obj.isoformat()
             raise TypeError(f"Type {type(obj)} not serializable")
-        
+
         json_str = json.dumps(data, indent=4, ensure_ascii=False, default=json_serializer)
-        
-        # 2. Проверка размера данных
-        if len(json_str) > 900000:  # ~900KB
-            st.warning("Данные приближаются к лимиту (1MB). Рекомендуется архивация.")
-            if st.button("Архивировать автоматически"):
-                if archive_data():
-                    st.rerun()
-                else:
-                    return False
-        
-        # 3. Локальное сохранение
-        try:
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                f.write(json_str)
-        except Exception as e:
-            st.error(f"Ошибка локального сохранения: {str(e)}")
-            return False
-        
-        # 4. Сохранение в GitHub (если настроено)
+
+        # Локальное сохранение
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            f.write(json_str)
+
+        # Сохранение в GitHub
         if GITHUB_TOKEN and GIST_ID:
-            g = get_github_client()
-            if not g:
+            headers = github_headers()
+            if not headers:
                 return False
-                
-            try:
-                gist = g.get_gist(GIST_ID)
-                files = {"center_data.json": InputFileContent(json_str)}
-                
-                # Обновляем Gist
-                gist.edit(files=files)
-                
-                # Проверяем успешность обновления
-                updated_gist = g.get_gist(GIST_ID)
-                if updated_gist.updated_at > gist.updated_at:
-                    st.success("Данные синхронизированы с GitHub!")
-                else:
-                    st.warning("Данные не обновились на GitHub")
-                    
-            except Exception as github_error:
-                st.error(f"Ошибка GitHub: {str(github_error)}")
+
+            resp = requests.patch(
+                f"https://api.github.com/gists/{GIST_ID}",
+                headers=headers,
+                json={"files": {"center_data.json": {"content": json_str}}}
+            )
+
+            if resp.status_code == 200:
+                st.success("Данные синхронизированы с GitHub!")
+            else:
+                st.error(f"Ошибка обновления Gist: {resp.status_code} {resp.text}")
                 return False
-        
+
         return True
-        
     except Exception as e:
-        st.error(f"Критическая ошибка сохранения: {str(e)}")
+        st.error(f"Ошибка сохранения: {str(e)}")
         return False
 
 
@@ -408,19 +373,19 @@ def show_gist_history():
 if st.session_state.get('authenticated') and st.session_state.role == 'admin':
     if st.sidebar.button("Проверить GitHub соединение"):
         try:
-            g = Github(GITHUB_TOKEN)
-            gist = g.get_gist(GIST_ID)
-            
-            # Безопасная проверка содержимого
-            content_preview = gist.files["center_data.json"].content[:200] + "..." if "center_data.json" in gist.files else "Файл не найден"
-            
-            st.sidebar.success(f"✅ Соединение с GitHub установлено")
-            st.sidebar.markdown(f"**Последнее обновление:** {gist.updated_at}")
-            st.sidebar.markdown(f"**Размер данных:** {len(gist.files['center_data.json'].content)/1024:.1f} KB" if "center_data.json" in gist.files else "")
-            st.sidebar.text_area("Предпросмотр данных", content_preview, height=100)
-            
+            resp = requests.get(f"https://api.github.com/gists/{GIST_ID}", headers=github_headers())
+            if resp.status_code == 200:
+                gist = resp.json()
+                content_preview = gist["files"]["center_data.json"]["content"][:200] + "..." if "center_data.json" in gist["files"] else "Файл не найден"
+                st.sidebar.success("✅ Соединение с GitHub установлено")
+                st.sidebar.markdown(f"**Последнее обновление:** {gist['updated_at']}")
+                st.sidebar.markdown(f"**Размер данных:** {len(content_preview)/1024:.1f} KB")
+                st.sidebar.text_area("Предпросмотр данных", content_preview, height=100)
+            else:
+                st.sidebar.error(f"❌ Ошибка подключения: {resp.status_code} {resp.text}")
         except Exception as e:
             st.sidebar.error(f"❌ Ошибка подключения: {str(e)}")
+
 # --- Page Content Functions ---
 def show_home_page():
     """Главная страница с обложкой, расписанием и новостями."""
