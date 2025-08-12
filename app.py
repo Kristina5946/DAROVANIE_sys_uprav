@@ -46,12 +46,12 @@ if not os.path.exists(DATA_FILE):
     initial_data = {
         'news': [],
         'directions': [],
+        'subdirections': [], 
         'students': [],
         'teachers': [],
         'parents': [],
         'payments': [],
         'schedule': [],
-        'individual_lessons': [],
         'materials': [],
         'attendance': {},
         'kanban_tasks': {
@@ -216,12 +216,12 @@ if 'data' not in st.session_state:
     required_keys = {
         'news': [],
         'directions': [],
+        'subdirections': [], 
         'students': [],
         'teachers': [],
         'parents': [],
         'payments': [],
         'schedule': [],
-        'individual_lessons': [],
         'materials': [],
         'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
         'attendance': {},
@@ -315,13 +315,7 @@ def get_student_by_id(student_id):
 def get_direction_by_id(direction_id):
     """Get direction by ID. Uses caching to improve performance."""
     return next((d for d in st.session_state.data['directions'] if d.get('id') == direction_id), None)
-@st.cache_data
-def get_subdirection_by_id(subdirection_id):
-    for d in st.session_state.data['directions']:
-        for sub in d.get('subdirections', []):
-            if sub['id'] == subdirection_id:
-                return sub
-    return None
+
 @st.cache_data
 def get_teacher_by_id(teacher_id):
     """Get teacher by ID. Uses caching to improve performance."""
@@ -354,62 +348,6 @@ def calculate_age(birth_date):
     
     today = date.today()
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
-def add_subdirection(direction_id, student_name, student_id=None):
-    direction = next(d for d in st.session_state.data['directions'] if d['id'] == direction_id)
-    sub_name = f"{direction['name']} ({student_name})"
-    
-    new_sub = {
-        "id": str(uuid.uuid4()),
-        "name": sub_name,
-        "student_id": student_id
-    }
-    
-    if 'subdirections' not in direction:
-        direction['subdirections'] = []
-    
-    direction['subdirections'].append(new_sub)
-    save_data(st.session_state.data)
-    return new_sub
-def add_individual_lesson(student_id, teacher_id, direction_name, date_str, start_time, end_time, room=None):
-    """Добавляет индивидуальное занятие с проверкой занятости"""
-    lessons = st.session_state.data.get("individual_lessons", [])
-
-    # Проверка, что нет у преподавателя другого занятия в это время
-    for lesson in lessons:
-        if lesson["teacher_id"] == teacher_id and lesson["date"] == date_str:
-            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
-                st.error("Этот преподаватель уже занят в это время.")
-                return False
-
-    # Проверка, что у ученика нет другого занятия в это время
-    for lesson in lessons:
-        if lesson["student_id"] == student_id and lesson["date"] == date_str:
-            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
-                st.error("У ученика уже есть занятие в это время.")
-                return False
-
-    # Проверка свободного класса для направления
-    for lesson in lessons:
-        if lesson.get("room") == room and lesson["date"] == date_str:
-            if not (end_time <= lesson["start_time"] or start_time >= lesson["end_time"]):
-                st.error("Этот класс уже занят.")
-                return False
-
-    lessons.append({
-        "id": str(uuid.uuid4()),
-        "student_id": student_id,
-        "teacher_id": teacher_id,
-        "direction": direction_name,
-        "date": date_str,
-        "start_time": start_time,
-        "end_time": end_time,
-        "room": room
-    })
-
-    st.session_state.data["individual_lessons"] = lessons
-    save_data(st.session_state.data)
-    st.success("Индивидуальное занятие добавлено!")
-    return True
 
 def suggest_directions(age, gender=None):
     """Suggest directions based on age and optional gender."""
@@ -665,56 +603,7 @@ def show_directions_page():
                     st.rerun()
                 else:
                     st.error("Название обязательно.")
-    # Новая секция для управления поднаправлениями
-    with st.expander("➕ Управление поднаправлениями", expanded=False):
-        selected_dir = st.selectbox(
-            "Выберите направление",
-            [d for d in directions if d.get('is_individual', False)],
-            format_func=lambda x: x['name']
-        )
-        
-        if selected_dir:
-            # Добавление нового поднаправления
-            with st.form("new_subdirection_form"):
-                student = st.selectbox(
-                    "Ученик",
-                    [s for s in st.session_state.data['students']],
-                    format_func=lambda x: x['name']
-                )
-                
-                if st.form_submit_button("Добавить поднаправление"):
-                    new_sub = add_subdirection(
-                        selected_dir['id'],
-                        student['name'],
-                        student['id']
-                    )
-                    st.success(f"Добавлено: {new_sub['name']}")
-                    st.rerun()
-            
-            # Таблица существующих поднаправлений
-            if selected_dir.get('subdirections'):
-                st.subheader("Текущие поднаправления")
-                sub_df = pd.DataFrame(selected_dir['subdirections'])
-                
-                # Добавляем колонку для удаления
-                sub_df['Удалить'] = False
-                
-                edited = st.data_editor(
-                    sub_df[['name', 'Удалить']],
-                    hide_index=True,
-                    disabled=['name']
-                )
-                
-                if st.button("Удалить отмеченные"):
-                    to_keep = [s for s, remove in zip(
-                        selected_dir['subdirections'],
-                        edited['Удалить']
-                    ) if not remove]
-                    
-                    selected_dir['subdirections'] = to_keep
-                    save_data(st.session_state.data)
-                    st.success("Поднаправления обновлены!")
-                    st.rerun()
+
     # 🔄 Переключение режима отображения
     st.markdown("### 📌 Отображение")
     view_mode = st.radio("Режим", ["📋 Таблица", "🧾 Карточки"], horizontal=True)
@@ -726,9 +615,16 @@ def show_directions_page():
             for d in directions:
                 if 'id' not in d:
                     d['id'] = str(uuid.uuid4())  # фиксация KeyError
-                if d.get('is_individual', False) and d.get('subdirections'):
-                    student_count = len(d['subdirections'])
+                #  подсчет учеников :
+                student_count = 0
+                has_subdirections = any(sub['parent'] == d['name'] for sub in st.session_state.data.get('subdirections', []))
+
+                if has_subdirections:
+                    # Для направлений с поднаправлениями - считаем количество поднаправлений
+                    student_count = len([sub for sub in st.session_state.data.get('subdirections', []) 
+                                        if sub['parent'] == d['name']])
                 else:
+                    # Для обычных направлений - считаем учеников как раньше
                     student_count = len([s for s in students if d['name'] in s.get("directions", [])])
                 table_data.append({
                     "id": d["id"],
@@ -781,7 +677,17 @@ def show_directions_page():
             for d in directions:
                 if 'id' not in d:
                     d['id'] = str(uuid.uuid4())  # защита от KeyError
-                student_count = len([s for s in students if d["name"] in s.get("directions", [])])
+                #  подсчет учеников:
+                student_count = 0
+                has_subdirections = any(sub['parent'] == d['name'] for sub in st.session_state.data.get('subdirections', []))
+
+                if has_subdirections:
+                    # Для направлений с поднаправлениями - считаем количество поднаправлений
+                    student_count = len([sub for sub in st.session_state.data.get('subdirections', []) 
+                                        if sub['parent'] == d['name']])
+                else:
+                    # Для обычных направлений - считаем учеников как раньше
+                    student_count = len([s for s in students if d['name'] in s.get("directions", [])])
                 with st.container(border=True):
                     st.subheader(d["name"])
                     st.caption(d.get("description", ""))
@@ -794,6 +700,67 @@ def show_directions_page():
                     st.markdown(f"**Возраст:** {age_str} | **Пол:** {d.get('gender', 'Любой')}")
         else:
             st.info("Нет направлений для отображения.")
+    st.subheader("🎯 Поднаправления (для индивидуальных занятий)")
+
+    # Создаем таблицу поднаправлений
+    subdirections = st.session_state.data.setdefault('subdirections', [])
+
+    # Добавление нового поднаправления
+    with st.expander("➕ Добавить поднаправление", expanded=False):
+        with st.form("new_subdirection_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                parent_dir = st.selectbox("Основное направление", 
+                                    [d['name'] for d in st.session_state.data['directions']])
+            with col2:
+                sub_name = st.text_input("Название поднаправления*")
+            
+            if st.form_submit_button("Добавить"):
+                if sub_name:
+                    new_sub = {
+                        'id': str(uuid.uuid4()),
+                        'parent': parent_dir,
+                        'name': sub_name
+                    }
+                    subdirections.append(new_sub)
+                    save_data(st.session_state.data)
+                    st.success("Поднаправление добавлено!")
+                    st.rerun()
+                else:
+                    st.error("Название обязательно")
+
+    # Отображение и редактирование таблицы поднаправлений
+    if subdirections:
+        df_subs = pd.DataFrame(subdirections)
+        df_subs['Удалить'] = False
+        
+        edited_subs = st.data_editor(
+            df_subs[['parent', 'name', 'Удалить']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "parent": "Основное направление",
+                "name": "Поднаправление",
+                "Удалить": st.column_config.CheckboxColumn("Удалить?")
+            }
+        )
+        
+        if st.button("💾 Сохранить изменения поднаправлений"):
+            for i, row in edited_subs.iterrows():
+                if not row['Удалить']:
+                    subdirections[i]['parent'] = row['parent']
+                    subdirections[i]['name'] = row['name']
+            
+            # Удаляем отмеченные
+            st.session_state.data['subdirections'] = [
+                s for i, s in enumerate(subdirections) 
+                if not edited_subs.iloc[i]['Удалить']
+            ]
+            save_data(st.session_state.data)
+            st.success("Изменения сохранены!")
+            st.rerun()
+    else:
+        st.info("Нет поднаправлений")
 
 def show_student_card(student_id):
     student = get_student_by_id(student_id)
@@ -1008,18 +975,9 @@ def show_students_page():
                                          format_func=lambda x: parent_map.get(x, "Новый родитель") if x else "Новый родитель")
                 new_parent_name = st.text_input("Имя нового родителя")
                 new_parent_phone = st.text_input("Телефон нового родителя")
-                selected_dirs = []
-                for d in directions:
-                    if d.get('is_individual', False) and d.get('subdirections'):
-                        selected_sub = st.selectbox(
-                            f"Выберите поднаправление для {d['name']}",
-                            [None] + [s['name'] for s in d['subdirections']]
-                        )
-                        if selected_sub:
-                            selected_dirs.append(selected_sub)
-                    else:
-                        if st.checkbox(d['name']):
-                            selected_dirs.append(d['name'])
+                dir_options = [d['name'] for d in directions]
+                subdir_options = [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
+                selected_dirs = st.multiselect("Направления", dir_options + subdir_options)
 
             if st.form_submit_button("Добавить"):
                 if name:
@@ -1235,18 +1193,7 @@ def show_teachers_page():
                 phone = st.text_input("Телефон")
                 email = st.text_input("Email")
             with col2:
-                teacher_directions = []
-                for d in directions:
-                    if d.get('is_individual', False) and d.get('subdirections'):
-                        teacher_sub = st.selectbox(
-                            f"Выберите поднаправление для {d['name']}",
-                            [None] + [s['name'] for s in d['subdirections']]
-                        )
-                        if teacher_sub:
-                            teacher_directions.append(selected_sub)
-                    else:
-                        if st.checkbox(d['name']):
-                            teacher_directions.append(d['name'])
+                teacher_directions = st.multiselect("Направления", [d['name'] for d in directions])
                 notes = st.text_area("Заметки")
 
             if st.form_submit_button("Добавить"):
@@ -1367,18 +1314,9 @@ def show_schedule_page():
             with st.form("new_schedule_form"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    direction_name = []
-                    for d in directions:
-                        if d.get('is_individual', False) and d.get('subdirections'):
-                            direction_sub = st.selectbox(
-                                f"Выберите поднаправление для {d['name']}",
-                                [None] + [s['name'] for s in d['subdirections']]
-                            )
-                            if direction_sub:
-                                direction_name.append(selected_sub)
-                        else:
-                            if st.checkbox(d['name']):
-                                direction_name.append(d['name'])
+                    direction_options = [d['name'] for d in directions]
+                    subdirection_options = [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
+                    direction_name = st.selectbox("Направление*", direction_options + subdirection_options)
                     teacher = st.selectbox("Преподаватель*", [t['name'] for t in teachers])
                 with col2:
                     start_time = st.time_input("Начало*", value=datetime.strptime("16:00", "%H:%M").time())
@@ -1506,22 +1444,6 @@ def show_schedule_page():
                     st.rerun()
     else:
         st.info(f"На {russian_day} занятий нет.")
-    # === Индивидуальные занятия ===
-    st.subheader("👤 Индивидуальные занятия")
-    individual_lessons = st.session_state.data.get("individual_lessons", [])
-    if individual_lessons:
-        selected_date_str = selected_date.strftime("%Y-%m-%d")
-        daily_individual = [l for l in individual_lessons if l["date"] == selected_date_str]
-
-        if daily_individual:
-            for lesson in sorted(daily_individual, key=lambda x: x["start_time"]):
-                student = next((s for s in st.session_state.data['students'] if s['id'] == lesson['student_id']), None)
-                teacher = next((t for t in st.session_state.data['teachers'] if t['id'] == lesson['teacher_id']), None)
-                st.write(f"{lesson['start_time']}–{lesson['end_time']} | {lesson['direction']} | {student['name']} (преп. {teacher['name']})")
-        else:
-            st.info("На этот день индивидуальных занятий нет.")
-    else:
-        st.info("Индивидуальные занятия ещё не запланированы.")
 
     # === Общее расписание ===
     st.subheader("📋 Общее расписание")
@@ -2301,6 +2223,7 @@ def show_data_management_page():
                 file_name=f"center_data_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
+import requests
 
 GITHUB_API = "https://api.github.com"
 
@@ -2519,18 +2442,7 @@ def show_payments_report():
                 df_filtered[['student', 'date', 'amount', 'direction', 'type', 'notes']],
                 use_container_width=True
             )
-            edited_df = st.data_editor(
-                df_payments,
-                num_rows="dynamic",
-                column_config={
-                    "Удалить": st.column_config.CheckboxColumn()
-                }
-            )
-
-            if st.button("Удалить отмеченные"):
-                df_payments = df_payments[~edited_df['Удалить']]
-                st.session_state.data['payments'] = df_payments.to_dict('records')
-                save_data(st.session_state.data)
+            
             # Summary statistics
             total_payments = df_filtered['amount'].sum()
             st.subheader(f"Общая сумма оплат: {total_payments:.2f} руб.")
@@ -3026,12 +2938,12 @@ else:
             if col1.button("✅ Да"):
                 initial_data = {
                     'directions': [],
+                    'subdirections': [], 
                     'students': [],
                     'teachers': [],
                     'parents': [],
                     'payments': [],
                     'schedule': [],
-                    'individual_lessons': [],
                     'materials': [],
                     'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
                     'attendance': {},
