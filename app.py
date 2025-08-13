@@ -11,7 +11,7 @@ from datetime import timedelta
 import csv
 from io import StringIO
 import base64
-
+from urllib.parse import quote
 import requests
 
 # Конфигурация (используйте секреты Streamlit!)
@@ -485,14 +485,14 @@ def show_home_page():
     
     # --- Генератор сообщений WhatsApp ---
     st.subheader("💬 Генератор сообщений WhatsApp")
-    
+
     # Выбор даты с ограничением на будущие даты
     selected_date = st.date_input(
         "Выберите дату для сообщения",
         value=date.today(),
         min_value=date.today(),
         max_value=date.today() + timedelta(days=60))
-    
+
     # Определяем день недели
     day_name = selected_date.strftime("%A")
     day_map = {
@@ -500,10 +500,23 @@ def show_home_page():
         "Thursday": "Четверг", "Friday": "Пятница", "Saturday": "Суббота", "Sunday": "Воскресенье"
     }
     russian_day = day_map.get(day_name, day_name)
-    
-    # Выбор стикера
-    sticker = st.selectbox("Выберите стикер", ["🌸", "🌼", "🌞", "🌈", "🦋", "🍀"])
-    
+
+    # Расширенный выбор стикеров
+    sticker_options = {
+        "Цветок": "🌸",
+        "Солнце": "🌞",
+        "Радуга": "🌈",
+        "Бабочка": "🦋",
+        "Клевер": "🍀",
+        "Сердце": "💖",
+        "Звезда": "✨",
+        "Улыбка": "😊",
+        "Книжка": "📖",
+        "Корона": "👑"
+    }
+    selected_sticker_name = st.selectbox("Выберите стикер", list(sticker_options.keys()))
+    sticker = sticker_options[selected_sticker_name]
+
     if st.button("Сгенерировать сообщение"):
         # 1. Собираем регулярные занятия
         regular_lessons = [
@@ -558,7 +571,10 @@ def show_home_page():
             # Отображаем и добавляем кнопку WhatsApp
             st.text_area("Готовое сообщение", message, height=150)
             
-            whatsapp_link = f"https://wa.me/?text={message.replace('\n', '%0A')}"
+            # Используем urllib.parse.quote для безопасного кодирования всей строки
+            encoded_message = quote(message)
+            whatsapp_link = f"https://wa.me/?text={encoded_message}"
+            
             st.markdown(
                 f"""
                 <a href="{whatsapp_link}" target="_blank">
