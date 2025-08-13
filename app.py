@@ -3274,7 +3274,6 @@ def show_reception_helper():
             
             st.info(f"**Выбранный класс:** {suitable_classroom.get('name', 'Неизвестно')}")
         
-        # 5. Таблица занятости
         with st.expander("🕒 Выбор времени", expanded=True):
             # Получаем все занятия на выбранную дату
             regular_lessons = [
@@ -3295,42 +3294,52 @@ def show_reception_helper():
             schedule_df['Преподаватель'] = "✅ Свободно"
             schedule_df['Класс'] = "✅ Свободно"
             
-            # Заполняем занятость преподавателя
+            # Заполняем занятость преподавателя (исправленная версия)
             for lesson in all_lessons:
                 if lesson.get('teacher') == selected_teacher['name']:
-                    start = datetime.strptime(lesson['start_time'], "%H:%M")
-                    end = datetime.strptime(lesson['end_time'], "%H:%M")
+                    lesson_start = datetime.strptime(lesson['start_time'], "%H:%M")
+                    lesson_end = datetime.strptime(lesson['end_time'], "%H:%M")
+                    
+                    for slot in time_slots:
+                        slot_time = datetime.strptime(slot, "%H:%M")
+                        slot_end = slot_time + timedelta(minutes=45)  # Длительность слота
+                        
+                        # Правильная проверка пересечения временных интервалов
+                        if (slot_time < lesson_end) and (slot_end > lesson_start):
+                            schedule_df.at[slot, 'Преподаватель'] = f"❌ {lesson['start_time']}-{lesson['end_time']} ({lesson['direction']})"
+
+            # Заполняем занятость класса (исправленная версия)
+            for lesson in all_lessons:
+                if lesson.get('classroom') == suitable_classroom['id']:
+                    lesson_start = datetime.strptime(lesson['start_time'], "%H:%M")
+                    lesson_end = datetime.strptime(lesson['end_time'], "%H:%M")
+                    
                     for slot in time_slots:
                         slot_time = datetime.strptime(slot, "%H:%M")
                         slot_end = slot_time + timedelta(minutes=45)
-                        # Проверяем пересечение временных интервалов
-                        if not (slot_end <= start or slot_time >= end):
-                            schedule_df.at[slot, 'Преподаватель'] = f"❌ Занят ({lesson['direction']})"
-
-            # Заполняем занятость класса
-            for lesson in all_lessons:
-                if lesson.get('classroom') == suitable_classroom['id']:
-                    start = lesson['start_time']
-                    end = lesson['end_time']
-                    for slot in time_slots:
-                        slot_end = (datetime.strptime(slot, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M")
-                        if not (slot_end <= start or slot >= end):
-                            schedule_df.at[slot, 'Класс'] = f"❌ Занят ({lesson['direction']})"
+                        
+                        if (slot_time < lesson_end) and (slot_end > lesson_start):
+                            schedule_df.at[slot, 'Класс'] = f"❌ {lesson['start_time']}-{lesson['end_time']} ({lesson['direction']})"
             
             # Определяем свободные слоты
             available_slots = [
                 slot for slot in time_slots
-                if "Свободно" in schedule_df.at[slot, 'Преподаватель'] and 
-                "Свободно" in schedule_df.at[slot, 'Класс']
+                if "✅ Свободно" in schedule_df.at[slot, 'Преподаватель'] and 
+                "✅ Свободно" in schedule_df.at[slot, 'Класс']
             ]
             
-            # Отображаем таблицу занятости
+            # Отображаем таблицу занятости с подсветкой
+            def color_availability(val):
+                color = 'lightgreen' if "✅" in val else 'lightcoral'
+                return f'background-color: {color}'
+            
             st.dataframe(
-                schedule_df,
+                schedule_df.style.applymap(color_availability),
                 use_container_width=True,
+                height=400,
                 column_config={
-                    "Преподаватель": st.column_config.TextColumn(),
-                    "Класс": st.column_config.TextColumn()
+                    "Преподаватель": st.column_config.TextColumn("Занятость преподавателя"),
+                    "Класс": st.column_config.TextColumn("Занятость класса")
                 }
             )
             
@@ -3338,11 +3347,27 @@ def show_reception_helper():
                 st.error("Нет свободных временных окон на выбранную дату")
                 return
             
-            selected_time = st.selectbox(
-                "Выберите время*",
-                options=available_slots,
-                key="single_lesson_time"
-            )
+            # Выбор времени с указанием продолжительности
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_time = st.selectbox(
+                    "Выберите время начала*",
+                    options=available_slots,
+                    key="single_lesson_time"
+                )
+            with col2:
+                duration = st.selectbox(
+                    "Продолжительность*",
+                    options=["30 мин", "45 мин", "60 мин"],
+                    index=1
+                )
+            
+            # Рассчитываем время окончания
+            start_dt = datetime.strptime(selected_time, "%H:%M")
+            duration_mins = int(duration.split()[0])
+            end_time = (start_dt + timedelta(minutes=duration_mins)).strftime("%H:%M")
+            
+            st.success(f"Выбрано время: {selected_time}-{end_time} ({duration})")
         
         # 6. Дополнительная информация
         with st.expander("📝 Дополнительно", expanded=False):
