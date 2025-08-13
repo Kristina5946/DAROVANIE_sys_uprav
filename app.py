@@ -486,60 +486,100 @@ def show_home_page():
     # --- Генератор сообщений WhatsApp ---
     st.subheader("💬 Генератор сообщений WhatsApp")
     
-    selected_day = st.selectbox("Выберите день для сообщения", days_order)
-    sticker_options = ["🪻", "🌸", "🌼", "🌺", "🌷", "💐", "🌹", "🌻", "🌞", "🌈"]
-    selected_sticker = st.selectbox("Выберите стикер", sticker_options)
+    # Выбор даты с ограничением на будущие даты
+    selected_date = st.date_input(
+        "Выберите дату для сообщения",
+        value=date.today(),
+        min_value=date.today(),
+        max_value=date.today() + timedelta(days=60))
+    
+    # Определяем день недели
+    day_name = selected_date.strftime("%A")
+    day_map = {
+        "Monday": "Понедельник", "Tuesday": "Вторник", "Wednesday": "Среда",
+        "Thursday": "Четверг", "Friday": "Пятница", "Saturday": "Суббота", "Sunday": "Воскресенье"
+    }
+    russian_day = day_map.get(day_name, day_name)
+    
+    # Выбор стикера
+    sticker = st.selectbox("Выберите стикер", ["🌸", "🌼", "🌞", "🌈", "🦋", "🍀"])
     
     if st.button("Сгенерировать сообщение"):
-        # Получаем регулярные занятия
-        lessons_today = [l for l in st.session_state.data['schedule'] if l['day'] == selected_day]
-        
-        # Добавляем разовые занятия на выбранный день
-        single_lessons_today = [
-            {
-                'direction': l['direction'],
-                'teacher': l['teacher'],
-                'start_time': l['start_time'],
-                'end_time': l['end_time'],
-                'day': selected_day
-            }
-            for l in st.session_state.data.get('single_lessons', [])
-            if datetime.strptime(l['date'], "%Y-%m-%d").strftime("%A") == selected_day
+        # 1. Собираем регулярные занятия
+        regular_lessons = [
+            {'time': l['start_time'], 'direction': l['direction']}
+            for l in st.session_state.data['schedule']
+            if l['day'] == russian_day
         ]
         
-        # Объединяем занятия
-        all_lessons_today = lessons_today + single_lessons_today
+        # 2. Добавляем разовые занятия на эту дату
+        single_lessons = [
+            {'time': l['start_time'], 'direction': l['direction']}
+            for l in st.session_state.data.get('single_lessons', [])
+            if l['date'] == selected_date.strftime("%Y-%m-%d")
+        ]
         
+        # 3. Фильтруем по преподавателю (если это учитель)
         if st.session_state.role == 'teacher':
             teacher = get_teacher_by_id(st.session_state.teacher_id)
             if teacher:
-                all_lessons_today = [l for l in all_lessons_today if l.get('teacher') == teacher.get('name')]
-
-        if all_lessons_today:
-            message = f"Доброе утро!{selected_sticker}\nПриглашаем сегодня на занятия:\n"
+                teacher_name = teacher.get('name', '')
+                regular_lessons = [
+                    l for l in regular_lessons 
+                    if any(
+                        t['name'] == teacher_name 
+                        for t in st.session_state.data['teachers'] 
+                        if l['direction'] in t.get('directions', [])
+                    )
+                ]
+                single_lessons = [
+                    l for l in single_lessons 
+                    if any(
+                        t['name'] == teacher_name 
+                        for t in st.session_state.data['teachers'] 
+                        if l['direction'] in t.get('directions', [])
+                    )
+                ]
+        
+        # 4. Объединяем и сортируем
+        all_lessons = regular_lessons + single_lessons
+        all_lessons.sort(key=lambda x: x['time'])
+        
+        if all_lessons:
+            # Формируем сообщение
+            message = f"Доброе утро!{sticker}\n"
+            message += f"Напоминаем о занятиях на {selected_date.strftime('%d.%m.%Y')}:\n\n"
             
-            # Сортируем все занятия по времени
-            all_lessons_today.sort(key=lambda x: x['start_time'])
+            for lesson in all_lessons:
+                message += f"{lesson['time']} - {lesson['direction']}\n"
             
-            for lesson in all_lessons_today:
-                message += f"{lesson['start_time']} - {lesson['direction']}\n" 
+            message += "\nЖдем вас!"
             
-            st.text_area("Сообщение для WhatsApp", message, height=200)
+            # Отображаем и добавляем кнопку WhatsApp
+            st.text_area("Готовое сообщение", message, height=150)
             
-            # Сначала обработайте сообщение, заменив символы новой строки
-            processed_message = message.replace('\n', '%0A')
-
-            # Затем используйте уже обработанную переменную в f-строке
-            st.markdown(f"""
-                <a href="https://wa.me/?text={processed_message}" target="_blank">
-                    <button style="background-color:#25D366;color:white;border:none;padding:10px 20px;border-radius:5px;">
-                        Открыть в WhatsApp
+            whatsapp_link = f"https://wa.me/?text={message.replace('\n', '%0A')}"
+            st.markdown(
+                f"""
+                <a href="{whatsapp_link}" target="_blank">
+                    <button style="
+                        background-color:#25D366;
+                        color:white;
+                        border:none;
+                        padding:12px 24px;
+                        border-radius:8px;
+                        font-size:16px;
+                        margin-top:10px;
+                        width:100%;
+                    ">
+                        📱 Отправить в WhatsApp
                     </button>
                 </a>
-            """, unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True
+            )
         else:
-            st.warning("На выбранный день нет занятий")
-    
+            st.warning(f"На {selected_date.strftime('%d.%m.%Y')} нет занятий")
     # --- Новостная лента ---
     st.subheader("📰 Новостная лента")
     news_folder = os.path.join(MEDIA_FOLDER, "news")
@@ -913,19 +953,64 @@ def show_student_card(student_id):
                         })
 
         if attendances:
-            # Сортируем по дате и группируем по направлениям
             df_att = pd.DataFrame(attendances).sort_values("Дата", ascending=False)
+            df_att['Удалить'] = False  # Добавляем колонку для удаления
             
-            # Отображаем таблицу (скрываем колонку с фактическим направлением)
+            # Отображаем основную таблицу (скрываем колонку удаления)
             st.dataframe(
-                df_att.drop(columns=['Фактическое направление']),
+                df_att.drop(columns=['Удалить', 'Фактическое направление']),
                 use_container_width=True,
                 column_config={
                     "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
-                    "Был": st.column_config.TextColumn("Посещение"),
-                    "Оплачено": st.column_config.TextColumn("Оплата")
-                }
+                    "Был": st.column_config.CheckboxColumn("Посещение"),
+                    "Оплачено": st.column_config.CheckboxColumn("Оплата")
+                },
+                hide_index=True
             )
+            
+            # Редактируемая таблица с колонкой удаления (в expander)
+            with st.expander("✏️ Редактировать посещения", expanded=False):
+                edited_att = st.data_editor(
+                    df_att,
+                    use_container_width=True,
+                    column_config={
+                        "Удалить": st.column_config.CheckboxColumn("Удалить?", default=False),
+                        "Дата": st.column_config.DateColumn(format="DD.MM.YYYY", disabled=True),
+                        "Направление": st.column_config.TextColumn(disabled=True),
+                        "Тип": st.column_config.TextColumn(disabled=True)
+                    },
+                    hide_index=True,
+                    key=f"att_editor_{student_id}"
+                )
+                
+                if st.button("💾 Сохранить изменения", key=f"save_att_{student_id}"):
+                    # Удаляем отмеченные посещения
+                    to_delete = edited_att[edited_att['Удалить']]
+                    
+                    for _, row in to_delete.iterrows():
+                        date_key = row['Дата'].strftime("%Y-%m-%d")
+                        direction = row['Фактическое направление']
+                        
+                        # Находим и удаляем запись о посещении
+                        if date_key in st.session_state.data['attendance']:
+                            for lesson_id in st.session_state.data['attendance'][date_key]:
+                                if student_id in st.session_state.data['attendance'][date_key][lesson_id]:
+                                    lesson = next(
+                                        (l for l in st.session_state.data['schedule'] + 
+                                        st.session_state.data.get('single_lessons', [])
+                                        if l['id'] == lesson_id and l['direction'] == direction
+                                        ), None)
+                                    
+                                    if lesson:
+                                        del st.session_state.data['attendance'][date_key][lesson_id][student_id]
+                                        if not st.session_state.data['attendance'][date_key][lesson_id]:
+                                            del st.session_state.data['attendance'][date_key][lesson_id]
+                                        if not st.session_state.data['attendance'][date_key]:
+                                            del st.session_state.data['attendance'][date_key]
+                    
+                    save_data(st.session_state.data)
+                    st.success("Изменения сохранены!")
+                    st.rerun()
             
             # Добавляем возможность посмотреть детали
             with st.expander("🔍 Детализация по поднаправлениям"):
@@ -1660,16 +1745,50 @@ def show_schedule_page():
                 if st.button("💾 Сохранить посещения", key=f"save_{att_key}"):
                     for idx, s in enumerate(students_in_dir):
                         s_id = s['id']
-                        attendance[date_key][lesson_key][s_id] = {
+                        new_status = {
                             'present': bool(edited_df.iloc[idx]['Присутствовал']),
                             'paid': bool(edited_df.iloc[idx]['Оплачено']),
                             'note': str(edited_df.iloc[idx]['Примечание'])
                         }
+                        
+                        # Если оплата отмечена, но платежа нет - создаем автоматически
+                        if new_status['paid']:
+                            payment_exists = any(
+                                p['student_id'] == s_id and 
+                                p['direction'] == lesson['direction'] and
+                                p['date'] == date_key
+                                for p in st.session_state.data['payments']
+                            )
+                            
+                            if not payment_exists:
+                                # Получаем стоимость из направления
+                                direction = next(
+                                    (d for d in st.session_state.data['directions'] 
+                                    if d['name'] == lesson['direction']), None
+                                )
+                                cost = direction.get('trial_cost', 0) if direction else 0 
+                                
+                                new_payment = {
+                                    'id': str(uuid.uuid4()),
+                                    'student_id': s_id,
+                                    'date': date_key,
+                                    'amount': cost,
+                                    'direction': lesson['direction'],
+                                    'type': 'Разовое', # Заменено на 'Разовое'
+                                    'notes': f"Автоматически создано при отметке посещения"
+                                }
+                                st.session_state.data['payments'].append(new_payment)
+                        
+                        # Обновление статуса посещения, независимо от создания платежа
+                        if date_key not in attendance:
+                            attendance[date_key] = {}
+                        if lesson_key not in attendance[date_key]:
+                            attendance[date_key][lesson_key] = {}
+                        
+                        attendance[date_key][lesson_key][s_id] = new_status
                     
-                    st.session_state[att_key]['saved'] = True
-                    st.session_state[att_key]['data'] = edited_df.to_dict('records')
                     save_data(st.session_state.data)
-                    st.success("Посещения сохранены!")
+                    st.success("Посещения и оплаты сохранены!")
                     time.sleep(0.3)
                     st.rerun()
     else:
