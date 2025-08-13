@@ -2728,61 +2728,70 @@ def show_data_archives_page():
                 except Exception as e:
                     st.error(f"Ошибка при создании архива: {str(e)}")
 
-    # Список архивов
+    # Список архивов - исправленная версия
     st.subheader("Существующие архивы")
     if not st.session_state.data["_archives"]:
         st.info("Архивные копии не создавались")
     else:
         for archive in reversed(st.session_state.data["_archives"]):
             with st.container(border=True):
+                # Безопасное получение имени архива
+                archive_name = archive.get("name", f"Архив от {archive.get('created', 'неизвестная дата')}")
+                archive_desc = archive.get("description", "Без описания")
+                
                 col1, col2, col3 = st.columns([4, 1, 1])
                 with col1:
-                    st.subheader(archive["name"])
-                    st.caption(archive["description"])
-                    st.write(f"📅 {archive['created']} | 📏 {archive['size']/1024:.1f} KB")
-                    st.markdown(f"[🔗 Открыть в GitHub]({archive['url']})")
+                    st.subheader(archive_name)  # Используем безопасное имя
+                    st.caption(archive_desc)
+                    st.write(f"📅 {archive.get('created', 'нет даты')} | 📏 {archive.get('size', 0)/1024:.1f} KB")
+                    if 'url' in archive:
+                        st.markdown(f"[🔗 Открыть в GitHub]({archive['url']})")
 
                 with col2:
-                    if st.button("↩️ Восстановить", key=f"restore_{archive['id']}"):
+                    if st.button("↩️ Восстановить", key=f"restore_{archive.get('id', '')}"):
                         if st.session_state.role != "admin":
                             st.warning("Только администратор может восстанавливать архивы")
                         else:
-                            if st.checkbox(f"Подтвердите восстановление архива '{archive['name']}'"):
-                                try:
-                                    gist_url = f"{gist_api}/{archive['id']}"
-                                    gist_resp = requests.get(gist_url, headers=github_headers())
-                                    gist_resp.raise_for_status()
-                                    files = gist_resp.json().get("files", {})
-                                    content = files.get(archive['filename'], {}).get("content", "")
+                            try:
+                                gist_url = f"{GITHUB_API}/gists/{archive.get('id')}"
+                                gist_resp = requests.get(gist_url, headers=github_headers())
+                                gist_resp.raise_for_status()
+                                files = gist_resp.json().get("files", {})
+                                content = next((f["content"] for f in files.values() if "content" in f), "")
+                                
+                                if content:
                                     restored_data = json.loads(content)
                                     st.session_state.data = restored_data
                                     save_data(st.session_state.data)
-                                    st.success("Архив успешно восстановлен!")
+                                    st.success("Архив успешно восстановлен! Обновите страницу.")
                                     time.sleep(2)
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(f"Ошибка восстановления: {str(e)}")
+                                else:
+                                    st.error("Не удалось получить содержимое архива")
+                            except Exception as e:
+                                st.error(f"Ошибка восстановления: {str(e)}")
 
                 with col3:
-                    if st.button("🗑️ Удалить", key=f"del_{archive['id']}"):
+                    if st.button("🗑️ Удалить", key=f"del_{archive.get('id', '')}"):
                         if st.session_state.role != "admin":
                             st.warning("Только администратор может удалять архивы")
                         else:
-                            if st.checkbox(f"Вы уверены, что хотите удалить архив '{archive['name']}'?"):
-                                try:
-                                    gist_url = f"{gist_api}/{archive['id']}"
-                                    del_resp = requests.delete(gist_url, headers=github_headers())
-                                    del_resp.raise_for_status()
-
+                            try:
+                                gist_url = f"{GITHUB_API}/gists/{archive.get('id')}"
+                                del_resp = requests.delete(gist_url, headers=github_headers())
+                                
+                                if del_resp.status_code == 204:
                                     st.session_state.data["_archives"] = [
                                         a for a in st.session_state.data["_archives"]
-                                        if a["id"] != archive["id"]
+                                        if a.get("id") != archive.get("id")
                                     ]
                                     save_data(st.session_state.data)
                                     st.success("Архив удален!")
                                     st.rerun()
-                                except Exception as e:
-                                    st.error(f"Ошибка удаления: {str(e)}")
+                                else:
+                                    st.error(f"Ошибка удаления: {del_resp.status_code}")
+                            except Exception as e:
+                                st.error(f"Ошибка удаления: {str(e)}")
 def show_version_view_page():
     """Страница для просмотра конкретной версии"""
     if 'viewing_version' not in st.session_state:
