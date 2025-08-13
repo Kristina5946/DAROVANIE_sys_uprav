@@ -805,32 +805,86 @@ def show_student_card(student_id):
 
 
         st.subheader("💳 Оплаты")
-        payments = [p for p in st.session_state.data['payments'] if p['student_id'] == student['id']]
+        # Получаем все оплаты ученика + проверяем поднаправления
+        payments = []
+        for p in st.session_state.data['payments']:
+            if p['student_id'] == student['id']:
+                # Проверяем прямое направление
+                if p['direction'] in student.get('directions', []):
+                    payments.append(p)
+                # Проверяем поднаправления (формат "Основное направление (Имя ребенка)")
+                elif any(p['direction'] == f"{s['parent']} ({s['name']})" 
+                        for s in st.session_state.data.get('subdirections', [])
+                        if s['name'] == student['name']):
+                    payments.append(p)
+
         if payments:
             df_pay = pd.DataFrame(payments)
             df_pay['date'] = pd.to_datetime(df_pay['date'])
-            st.dataframe(df_pay[['date', 'amount', 'direction', 'type', 'notes']], hide_index=True, use_container_width=True)
+            st.dataframe(df_pay[['date', 'amount', 'direction', 'type', 'notes']], 
+                    hide_index=True, 
+                    use_container_width=True)
         else:
             st.info("Нет оплат.")
 
         st.subheader("📅 Посещения")
         attendances = []
+
+        # Создаем карту соответствия поднаправлений к основным направлениям
+        direction_map = {
+            f"{s['parent']} ({s['name']})": s['parent'] 
+            for s in st.session_state.data.get('subdirections', [])
+        }
+
+        # Собираем данные о посещениях
         for day, lessons in st.session_state.data.get("attendance", {}).items():
             for lesson_id, students in lessons.items():
                 if student_id in students:
                     status = students[student_id]
                     lesson = next((l for l in st.session_state.data['schedule'] if l['id'] == lesson_id), None)
                     if lesson:
+                        direction_name = lesson['direction']
+                        # Преобразуем поднаправление в основное направление для отображения
+                        direction_to_show = direction_map.get(direction_name, direction_name)
+                        
                         attendances.append({
                             "Дата": day,
-                            "Направление": lesson['direction'],
+                            "Направление": direction_to_show,  # Показываем основное направление
+                            "Фактическое направление": direction_name,  # Сохраняем оригинальное название
                             "Преподаватель": lesson['teacher'],
                             "Был": "Да" if status.get('present') else "Нет",
                             "Оплачено": "Да" if status.get('paid') else "Нет",
                             "Примечание": status.get('note', '')
                         })
+
         if attendances:
-            st.dataframe(pd.DataFrame(attendances).sort_values("Дата", ascending=False), use_container_width=True)
+            # Сортируем по дате и группируем по направлениям
+            df_att = pd.DataFrame(attendances).sort_values("Дата", ascending=False)
+            
+            # Отображаем таблицу (скрываем колонку с фактическим направлением)
+            st.dataframe(
+                df_att.drop(columns=['Фактическое направление']),
+                use_container_width=True,
+                column_config={
+                    "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
+                    "Был": st.column_config.TextColumn("Посещение"),
+                    "Оплачено": st.column_config.TextColumn("Оплата")
+                }
+            )
+            
+            # Добавляем возможность посмотреть детали
+            with st.expander("🔍 Детализация по поднаправлениям"):
+                st.dataframe(
+                    df_att,
+                    use_container_width=True,
+                    column_config={
+                        "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
+                        "Направление": st.column_config.TextColumn("Группировка"),
+                        "Фактическое направление": st.column_config.TextColumn("Конкретное занятие"),
+                        "Был": st.column_config.TextColumn("Посещение"),
+                        "Оплачено": st.column_config.TextColumn("Оплата")
+                    }
+                )
         else:
             st.info("Нет посещений.")
 
@@ -855,31 +909,60 @@ def show_teacher_card(teacher_id):
 
         # 🎯 Направления преподавателя
         st.subheader("🎯 Направления и посещения")
-        for direction_name in teacher.get('directions', []):
+
+        # Создаем карту соответствия поднаправлений к основным направлениям
+        direction_map = {
+            f"{s['parent']} ({s['name']})": s['parent'] 
+            for s in st.session_state.data.get('subdirections', [])
+        }
+
+        # Собираем уникальные направления преподавателя (основные + поднаправления)
+        all_directions = set()
+        for dir_name in teacher.get('directions', []):
+            # Если это поднаправление - добавляем основное направление
+            if dir_name in direction_map:
+                all_directions.add(direction_map[dir_name])
+            else:
+                all_directions.add(dir_name)
+
+        for direction_name in sorted(all_directions):
             st.markdown(f"### 📘 {direction_name}")
             
-            # Найдём все занятия по этому направлению у этого преподавателя
-            lessons = [l for l in st.session_state.data['schedule']
-                      if l['direction'] == direction_name 
-                      and l['teacher'] == teacher['name']]
+            # Найдем все занятия (включая поднаправления)
+            lessons = []
+            # Основное направление
+            lessons.extend([l for l in st.session_state.data['schedule']
+                        if l['direction'] == direction_name 
+                        and l['teacher'] == teacher['name']])
+            # Поднаправления этого направления
+            subdirections = [k for k, v in direction_map.items() if v == direction_name]
+            for subdir in subdirections:
+                lessons.extend([l for l in st.session_state.data['schedule']
+                            if l['direction'] == subdir
+                            and l['teacher'] == teacher['name']])
 
             if not lessons:
                 st.info("Нет занятий по этому направлению.")
                 continue
 
-            # Найдём всех учеников на этом направлении
-            students_in_dir = [s for s in st.session_state.data['students'] 
-                             if direction_name in s.get('directions', [])]
-            
+            # Найдем всех учеников (включая поднаправления)
+            students_in_dir = []
+            # Основное направление
+            students_in_dir.extend([s for s in st.session_state.data['students'] 
+                                if direction_name in s.get('directions', [])])
+            # Поднаправления
+            for subdir in subdirections:
+                students_in_dir.extend([s for s in st.session_state.data['students'] 
+                                    if subdir in s.get('directions', [])])
+
             if not students_in_dir:
                 st.info("Нет учеников на этом направлении.")
                 continue
 
-            # Соберём все данные о посещениях
+            # Соберем все данные о посещениях
             attendance_data = []
             attendance = st.session_state.data.get("attendance", {})
             
-            # Для каждого ученика найдём все посещения
             for student in students_in_dir:
                 for lesson in lessons:
                     lesson_id = lesson.get('id')
@@ -887,44 +970,47 @@ def show_teacher_card(teacher_id):
                         if lesson_id in day_lessons and student['id'] in day_lessons[lesson_id]:
                             record = day_lessons[lesson_id][student['id']]
                             
-                            # Проверим оплату (синхронизация с данными о платежах)
+                            # Проверка оплаты
                             paid_status = record.get('paid', False)
                             if not paid_status:
-                                # Дополнительная проверка по платежам
+                                # Проверяем платежи как для основного направления, так и для поднаправлений
                                 for payment in st.session_state.data['payments']:
-                                    if (payment['student_id'] == student['id'] and 
-                                        payment['direction'] == direction_name):
-                                        payment_date = datetime.strptime(payment['date'], "%Y-%m-%d").date()
-                                        lesson_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                                        
-                                        if payment['type'] == "Абонемент":
-                                            if (payment_date.month == lesson_date.month and 
-                                                payment_date.year == lesson_date.year):
-                                                paid_status = True
-                                                break
-                                        elif payment['type'] in ["Разовое", "Пробное"]:
-                                            if payment_date == lesson_date:
-                                                paid_status = True
-                                                break
+                                    if payment['student_id'] == student['id']:
+                                        payment_dir = payment['direction']
+                                        if (payment_dir == direction_name or 
+                                            payment_dir in subdirections):
+                                            payment_date = datetime.strptime(payment['date'], "%Y-%m-%d").date()
+                                            lesson_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                                            
+                                            if payment['type'] == "Абонемент":
+                                                if (payment_date.month == lesson_date.month and 
+                                                    payment_date.year == lesson_date.year):
+                                                    paid_status = True
+                                                    break
+                                            elif payment['type'] in ["Разовое", "Пробное"]:
+                                                if payment_date == lesson_date:
+                                                    paid_status = True
+                                                    break
                             
                             attendance_data.append({
                                 "Ученик": student['name'],
                                 "Дата": date_str,
                                 "Занятие": f"{lesson['start_time']}-{lesson['end_time']}",
-                                "Присутствовал": "✅" if record.get('present') else "❌",
-                                "Оплачено": "✅" if paid_status else "❌",
-                                "Примечание": record.get('note', '')
+                                "Присутствовал": "Да" if record.get('present') else "Нет",
+                                "Оплачено": "Да" if paid_status else "Нет",
+                                "Примечание": record.get('note', ''),
+                                "Тип": "Поднаправление" if lesson['direction'] in subdirections else "Основное"
                             })
 
             if attendance_data:
-                # Создаём DataFrame и сортируем по дате
+                # Создаем DataFrame и сортируем по дате
                 df = pd.DataFrame(attendance_data)
                 df['Дата'] = pd.to_datetime(df['Дата'])
                 df = df.sort_values('Дата', ascending=False)
                 
-                # Отображаем таблицу с возможностью фильтрации
+                # Отображаем таблицу
                 st.dataframe(
-                    df,
+                    df.drop(columns=['Тип']),  # Скрываем служебную колонку
                     use_container_width=True,
                     hide_index=True,
                     column_config={
@@ -933,6 +1019,18 @@ def show_teacher_card(teacher_id):
                         "Оплачено": st.column_config.TextColumn()
                     }
                 )
+                
+                # Детализация в expander'е
+                with st.expander("🔍 Детализация по поднаправлениям"):
+                    st.dataframe(
+                        df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Дата": st.column_config.DateColumn(format="DD.MM.YYYY"),
+                            "Тип": st.column_config.TextColumn("Тип направления")
+                        }
+                    )
                 
                 # Кнопка экспорта
                 csv = df.to_csv(index=False).encode('utf-8')
@@ -1097,7 +1195,9 @@ def show_students_page():
                 amount = st.number_input("Сумма (₽)", min_value=0.0)
                 p_date = st.date_input("Дата", value=date.today())
             with col2:
-                direction = st.selectbox("Направление", [d['name'] for d in directions])
+                dir_options = [d['name'] for d in directions]
+                subdir_options = [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
+                direction = st.selectbox("Направление", dir_options + subdir_options)
                 p_type = st.selectbox("Тип", ["Абонемент", "Пробное", "Разовое"])
             notes = st.text_input("Заметки")
 
