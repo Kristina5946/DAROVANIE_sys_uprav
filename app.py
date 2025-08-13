@@ -204,8 +204,12 @@ def save_data(data):
             else:
                 st.error(f"Ошибка обновления Gist: {resp.status_code} {resp.text}")
                 return False
-
+        for payment in data['payments']:
+            if payment['student_id'] not in [s['id'] for s in data['students']]:
+                st.error(f"Ошибка целостности: платеж для несуществующего ученика {payment['student_id']}")
+                
         return True
+        
     except Exception as e:
         st.error(f"Ошибка сохранения: {str(e)}")
         return False
@@ -308,11 +312,24 @@ def logout():
     st.rerun()
 
 # --- Helper Functions ---
-@st.cache_data
 def get_student_by_id(student_id):
-    """Get student by ID. Uses caching to improve performance."""
+    """Get student by ID without caching"""
     return next((s for s in st.session_state.data['students'] if s.get('id') == student_id), None)
-
+def get_payments_for_student(student_id):
+    """Get payments with immediate updates"""
+    payments = []
+    for p in st.session_state.data['payments']:
+        if p['student_id'] == student_id:
+            # Проверяем прямое направление
+            student = get_student_by_id(student_id)
+            if p['direction'] in student.get('directions', []):
+                payments.append(p)
+            # Проверяем поднаправления
+            elif any(p['direction'] == f"{s['parent']} ({s['name']})" 
+                    for s in st.session_state.data.get('subdirections', [])
+                    if s['name'] == student['name']):
+                payments.append(p)
+    return payments
 @st.cache_data
 def get_direction_by_id(direction_id):
     """Get direction by ID. Uses caching to improve performance."""
@@ -335,7 +352,11 @@ def get_students_by_direction(direction_name):
 def get_schedule_by_day(day):
     """Get schedule entries for a specific day."""
     return [s for s in st.session_state.data['schedule'] if s.get('day') == day]
-
+def refresh_data():
+    """Полностью перезагружает данные и очищает кэш"""
+    st.cache_data.clear()
+    st.session_state.data = load_data()
+    st.rerun()
 def calculate_age(birth_date):
     """Корректный расчёт возраста."""
     if isinstance(birth_date, datetime):
@@ -408,7 +429,9 @@ if st.session_state.get('authenticated') and st.session_state.role == 'admin':
                 st.sidebar.error(f"❌ Ошибка подключения: {resp.status_code} {resp.text}")
         except Exception as e:
             st.sidebar.error(f"❌ Ошибка подключения: {str(e)}")
-
+if st.session_state.role == 'admin':
+    if st.sidebar.button("🔄 Обновить все данные"):
+        refresh_data()
 # --- Page Content Functions ---
 def show_home_page():
     """Главная страница с обложкой, расписанием и новостями."""
@@ -468,18 +491,37 @@ def show_home_page():
     selected_sticker = st.selectbox("Выберите стикер", sticker_options)
     
     if st.button("Сгенерировать сообщение"):
+        # Получаем регулярные занятия
         lessons_today = [l for l in st.session_state.data['schedule'] if l['day'] == selected_day]
+        
+        # Добавляем разовые занятия на выбранный день
+        single_lessons_today = [
+            {
+                'direction': l['direction'],
+                'teacher': l['teacher'],
+                'start_time': l['start_time'],
+                'end_time': l['end_time'],
+                'day': selected_day
+            }
+            for l in st.session_state.data.get('single_lessons', [])
+            if datetime.strptime(l['date'], "%Y-%m-%d").strftime("%A") == selected_day
+        ]
+        
+        # Объединяем занятия
+        all_lessons_today = lessons_today + single_lessons_today
+        
         if st.session_state.role == 'teacher':
             teacher = get_teacher_by_id(st.session_state.teacher_id)
             if teacher:
-                lessons_today = [l for l in lessons_today if l.get('teacher') == teacher.get('name')]
+                all_lessons_today = [l for l in all_lessons_today if l.get('teacher') == teacher.get('name')]
 
-        if lessons_today:
+        if all_lessons_today:
             message = f"Доброе утро!{selected_sticker}\nПриглашаем сегодня на занятия:\n"
             
-            lessons_today.sort(key=lambda x: x['start_time'])
-            for lesson in lessons_today:
-                # Removed age_text as it's often included in direction name already
+            # Сортируем все занятия по времени
+            all_lessons_today.sort(key=lambda x: x['start_time'])
+            
+            for lesson in all_lessons_today:
                 message += f"{lesson['start_time']} - {lesson['direction']}\n" 
             
             st.text_area("Сообщение для WhatsApp", message, height=200)
@@ -840,20 +882,31 @@ def show_student_card(student_id):
 
         # Собираем данные о посещениях
         for day, lessons in st.session_state.data.get("attendance", {}).items():
-            for lesson_id, students in lessons.items():
-                if student_id in students:
-                    status = students[student_id]
-                    lesson = next((l for l in st.session_state.data['schedule'] if l['id'] == lesson_id), None)
+            for lesson_id, students_data in lessons.items():
+                if student_id in students_data:
+                    status = students_data[student_id]
+                    
+                    # Проверяем как регулярные занятия, так и разовые
+                    lesson = next(
+                        (l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) 
+                        if l['id'] == lesson_id),
+                        None
+                    )
+                    
                     if lesson:
                         direction_name = lesson['direction']
                         # Преобразуем поднаправление в основное направление для отображения
                         direction_to_show = direction_map.get(direction_name, direction_name)
                         
+                        # Определяем тип занятия
+                        lesson_type = "Разовое" if 'date' in lesson else "Регулярное"
+                        
                         attendances.append({
                             "Дата": day,
-                            "Направление": direction_to_show,  # Показываем основное направление
-                            "Фактическое направление": direction_name,  # Сохраняем оригинальное название
+                            "Направление": direction_to_show,
+                            "Фактическое направление": direction_name,
                             "Преподаватель": lesson['teacher'],
+                            "Тип": lesson_type,
                             "Был": "Да" if status.get('present') else "Нет",
                             "Оплачено": "Да" if status.get('paid') else "Нет",
                             "Примечание": status.get('note', '')
@@ -1505,7 +1558,8 @@ def show_schedule_page():
             'start_time': l['start_time'],
             'end_time': l['end_time'],
             'day': russian_day,
-            'type': 'single'
+            'type': 'single',
+            'student_id': l['student_id']
         }
         for l in st.session_state.data.get('single_lessons', [])
         if l['date'] == selected_date.strftime("%Y-%m-%d")
@@ -1532,7 +1586,14 @@ def show_schedule_page():
                 if lesson.get('type') == 'single':
                     # Для разовых занятий - только один ученик
                     student = next((s for s in students if s['id'] == lesson.get('student_id')), None)
-                    students_in_dir = [student] if student else []
+                    if student:
+                        students_in_dir = [student]
+                        # Добавляем направление ученику, если его нет
+                        if lesson['direction'] not in student.get('directions', []):
+                            student['directions'].append(lesson['direction'])
+                            save_data(st.session_state.data)
+                    else:
+                        students_in_dir = []
                 else:
                     # Для регулярных - все ученики направления
                     students_in_dir = [s for s in students if lesson['direction'] in s.get('directions', [])]
@@ -3093,13 +3154,15 @@ def show_reception_helper():
             # Заполняем занятость преподавателя
             for lesson in all_lessons:
                 if lesson.get('teacher') == selected_teacher['name']:
-                    start = lesson['start_time']
-                    end = lesson['end_time']
+                    start = datetime.strptime(lesson['start_time'], "%H:%M")
+                    end = datetime.strptime(lesson['end_time'], "%H:%M")
                     for slot in time_slots:
-                        slot_end = (datetime.strptime(slot, "%H:%M") + timedelta(minutes=45)).strftime("%H:%M")
-                        if not (slot_end <= start or slot >= end):
+                        slot_time = datetime.strptime(slot, "%H:%M")
+                        slot_end = slot_time + timedelta(minutes=45)
+                        # Проверяем пересечение временных интервалов
+                        if not (slot_end <= start or slot_time >= end):
                             schedule_df.at[slot, 'Преподаватель'] = f"❌ Занят ({lesson['direction']})"
-            
+
             # Заполняем занятость класса
             for lesson in all_lessons:
                 if lesson.get('classroom') == suitable_classroom['id']:
