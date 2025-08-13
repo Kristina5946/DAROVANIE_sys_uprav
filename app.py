@@ -1549,7 +1549,7 @@ def show_schedule_page():
     st.subheader("📋 Общее расписание")
     if schedule:
         df = pd.DataFrame(schedule)
-
+        
         # Безопасное приведение времени
         df['start_time'] = pd.to_datetime(df['start_time'], format='mixed', errors='coerce').dt.strftime("%H:%M")
         df['end_time'] = pd.to_datetime(df['end_time'], format='mixed', errors='coerce').dt.strftime("%H:%M")
@@ -1563,19 +1563,51 @@ def show_schedule_page():
         with col2:
             teacher_filter = st.multiselect("Преподаватель", sorted(df['teacher'].unique()))
         with col3:
-            dir_filter = st.multiselect("Направление", sorted(df['direction'].unique()))
+            # Улучшенный фильтр направлений с учетом поднаправлений
+            subdir_to_main = {
+                subdir: main 
+                for main, subdir in [
+                    (s['parent'], f"{s['parent']} ({s['name']})") 
+                    for s in st.session_state.data.get('subdirections', [])
+                ]
+            }
+            
+            all_directions = set(df['direction'])
+            main_directions = set()
+            for direction in all_directions:
+                if direction in subdir_to_main:
+                    main_directions.add(subdir_to_main[direction])
+                else:
+                    main_directions.add(direction)
+            
+            selected_main_dirs = st.multiselect(
+                "Направление", 
+                sorted(main_directions),
+                format_func=lambda x: f"{x} (все поднаправления)" if any(
+                    d in subdir_to_main and subdir_to_main[d] == x 
+                    for d in all_directions
+                ) else x
+            )
 
+        # Применяем фильтры
         if day_filter:
             df = df[df['day'].isin(day_filter)]
         if teacher_filter:
             df = df[df['teacher'].isin(teacher_filter)]
-        if dir_filter:
-            df = df[df['direction'].isin(dir_filter)]
+        if selected_main_dirs:
+            selected_dirs = []
+            for main_dir in selected_main_dirs:
+                selected_dirs.append(main_dir)
+                selected_dirs.extend([
+                    subdir for subdir in subdir_to_main 
+                    if subdir_to_main[subdir] == main_dir and subdir in all_directions
+                ])
+            df = df[df['direction'].isin(selected_dirs)]
 
         # Добавляем столбец с кнопками удаления
-        df['Удалить'] = False  # Добавляем столбец для чекбоксов
+        df['Удалить'] = False
         
-        # Отображаем таблицу с возможностью выбора строк для удаления
+        # Отображаем таблицу
         edited_df = st.data_editor(
             df[['day', 'start_time', 'end_time', 'teacher', 'direction', 'Удалить']],
             use_container_width=True,
@@ -1592,26 +1624,16 @@ def show_schedule_page():
 
         # Кнопка для удаления выбранных занятий
         if st.button("🗑️ Удалить выбранные занятия"):
-            # Получаем индексы строк, отмеченных для удаления
             rows_to_delete = edited_df[edited_df['Удалить']].index
-            
             if len(rows_to_delete) > 0:
-                # Удаляем занятия из расписания
                 for index in sorted(rows_to_delete, reverse=True):
-                    # Находим ID занятия для удаления
                     lesson_id = schedule[index]['id']
-                    
-                    # Удаляем из основного расписания
                     del schedule[index]
-                    
-                    # Удаляем связанные посещения
                     for date_key in list(attendance.keys()):
                         if lesson_id in attendance[date_key]:
                             del attendance[date_key][lesson_id]
-                        # Удаляем пустые даты
                         if not attendance[date_key]:
                             del attendance[date_key]
-                
                 save_data(data)
                 st.success(f"Удалено {len(rows_to_delete)} занятий!")
                 st.rerun()
