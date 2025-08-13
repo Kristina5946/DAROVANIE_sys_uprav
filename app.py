@@ -3299,15 +3299,13 @@ def show_reception_helper():
                 if lesson.get('teacher') == selected_teacher['name']:
                     lesson_start = datetime.strptime(lesson['start_time'], "%H:%M")
                     lesson_end = datetime.strptime(lesson['end_time'], "%H:%M")
-                    
+
                     for slot in time_slots:
                         slot_time = datetime.strptime(slot, "%H:%M")
-                        slot_end = slot_time + timedelta(minutes=45)  # Длительность слота
                         
-                        # Правильная проверка пересечения временных интервалов
-                        if (slot_time < lesson_end) and (slot_end > lesson_start):
+                        # Проверяем, если начало 15-минутного слота попадает в интервал занятия
+                        if lesson_start <= slot_time < lesson_end:
                             schedule_df.at[slot, 'Преподаватель'] = f"❌ {lesson['start_time']}-{lesson['end_time']} ({lesson['direction']})"
-
             # Заполняем занятость класса (исправленная версия)
             for lesson in all_lessons:
                 if lesson.get('classroom') == suitable_classroom['id']:
@@ -3318,7 +3316,7 @@ def show_reception_helper():
                         slot_time = datetime.strptime(slot, "%H:%M")
                         slot_end = slot_time + timedelta(minutes=45)
                         
-                        if (slot_time < lesson_end) and (slot_end > lesson_start):
+                        if lesson_start <= slot_time < lesson_end:
                             schedule_df.at[slot, 'Класс'] = f"❌ {lesson['start_time']}-{lesson['end_time']} ({lesson['direction']})"
             
             # Определяем свободные слоты
