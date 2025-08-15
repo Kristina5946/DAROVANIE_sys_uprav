@@ -731,7 +731,7 @@ def show_directions_page():
                     "Название": d["name"],
                     "Описание": d.get("description", ""),
                     "Стоимость": d.get("cost", 0),
-                    "Пробное": d.get("trial_cost", 0),
+                    "Разовое": d.get("trial_cost", 0),
                     "Возраст": f"{d.get('min_age', '')}-{d.get('max_age', '')}",
                     "Пол": d.get("gender", "Любой"),
                     "Учеников": student_count
@@ -746,7 +746,7 @@ def show_directions_page():
                 disabled=["id", "Учеников"],
                 column_config={
                     "Стоимость": st.column_config.NumberColumn(format="%.0f ₽"),
-                    "Пробное": st.column_config.NumberColumn(format="%.0f ₽")
+                    "Разовое": st.column_config.NumberColumn(format="%.0f ₽")
                 }
             )
 
@@ -757,7 +757,7 @@ def show_directions_page():
                             d["name"] = row["Название"]
                             d["description"] = row["Описание"]
                             d["cost"] = row["Стоимость"]
-                            d["trial_cost"] = row["Пробное"]
+                            d["trial_cost"] = row["Разовое"]
                             d["gender"] = row["Пол"] if row["Пол"] != "Любой" else None
                             try:
                                 min_a, max_a = map(int, str(row["Возраст"]).split('-'))
@@ -793,7 +793,7 @@ def show_directions_page():
                     st.caption(d.get("description", ""))
                     col1, col2, col3 = st.columns(3)
                     col1.metric("💵 Абонемент", f"{d.get('cost', 0):.0f} ₽")
-                    col2.metric("🎫 Пробное", f"{d.get('trial_cost', 0):.0f} ₽")
+                    col2.metric("🎫 Разовое", f"{d.get('trial_cost', 0):.0f} ₽")
                     col3.metric("👥 Учеников", student_count)
 
                     age_str = f"{d.get('min_age', '?')} - {d.get('max_age', '?')} лет"
@@ -3141,7 +3141,7 @@ def show_reception_helper():
                                         st.subheader(direction['name'])
                                         st.write(f"**Возраст:** {direction.get('min_age', '?')}-{direction.get('max_age', '?')} лет")
                                         st.write(f"**Абонемент:** {direction['cost']} руб.")
-                                        st.write(f"**Пробное занятие:** {direction.get('trial_cost', '?')} руб.")
+                                        st.write(f"**Разовое занятие:** {direction.get('trial_cost', '?')} руб.")
                                         
                                         if direction.get('description'):
                                             st.caption(direction['description'])
