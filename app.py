@@ -1778,7 +1778,7 @@ def show_schedule_page():
                     }
                 )
 
-                # Обработка сохранения
+                # В блоке сохранения посещений замените проверку оплаты на:
                 if st.button("💾 Сохранить посещения", key=f"save_{att_key}"):
                     for idx, s in enumerate(students_in_dir):
                         s_id = s['id']
@@ -1788,8 +1788,12 @@ def show_schedule_page():
                             'note': str(edited_df.iloc[idx]['Примечание'])
                         }
                         
-                        # Если оплата отмечена, но платежа нет - создаем автоматически
-                        if new_status['paid']:
+                        # Проверяем текущий статус оплаты
+                        current_paid_status = attendance[date_key][lesson_key][s_id].get('paid', False)
+                        
+                        # Если галочка оплаты была изменена с False на True
+                        if new_status['paid'] and not current_paid_status:
+                            # Проверяем, нет ли уже платежа за это занятие
                             payment_exists = any(
                                 p['student_id'] == s_id and 
                                 p['direction'] == lesson['direction'] and
@@ -1798,25 +1802,26 @@ def show_schedule_page():
                             )
                             
                             if not payment_exists:
-                                # Получаем стоимость из направления
-                                direction = next(
-                                    (d for d in st.session_state.data['directions'] 
-                                    if d['name'] == lesson['direction']), None
-                                )
-                                cost = direction.get('trial_cost', 0) if direction else 0 
-                                
-                                new_payment = {
-                                    'id': str(uuid.uuid4()),
-                                    'student_id': s_id,
-                                    'date': date_key,
-                                    'amount': cost,
-                                    'direction': lesson['direction'],
-                                    'type': 'Разовое', # Заменено на 'Разовое'
-                                    'notes': f"Автоматически создано при отметке посещения"
-                                }
-                                st.session_state.data['payments'].append(new_payment)
+                                # Для разовых занятий берем стоимость из направления
+                                if lesson.get('type') == 'single':
+                                    direction = next(
+                                        (d for d in st.session_state.data['directions'] 
+                                        if d['name'] == lesson['direction']), None)
+                                    cost = direction.get('trial_cost', 0) if direction else 0
+                                    
+                                    new_payment = {
+                                        'id': str(uuid.uuid4()),
+                                        'student_id': s_id,
+                                        'date': date_key,
+                                        'amount': cost,
+                                        'direction': lesson['direction'],
+                                        'type': 'Разовое',
+                                        'notes': "Автоматически создано при отметке посещения"
+                                    }
+                                    st.session_state.data['payments'].append(new_payment)
+                                    st.success(f"Добавлена оплата за разовое занятие: {cost} ₽")
                         
-                        # Обновление статуса посещения, независимо от создания платежа
+                        # Обновляем статус посещения
                         if date_key not in attendance:
                             attendance[date_key] = {}
                         if lesson_key not in attendance[date_key]:
@@ -1825,7 +1830,7 @@ def show_schedule_page():
                         attendance[date_key][lesson_key][s_id] = new_status
                     
                     save_data(st.session_state.data)
-                    st.success("Посещения и оплаты сохранены!")
+                    st.success("Посещения сохранены!")
                     time.sleep(0.3)
                     st.rerun()
     else:
@@ -2136,222 +2141,109 @@ def show_kanban_board():
             else:
                 st.info("Нет задач")
 
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+
+# --- Инициализация Google Drive ---
+def init_gdrive():
+    # Настройка и аутентификация
+    gauth = GoogleAuth()
+    # Эта строка запустит локальный веб-сервер для аутентификации
+    gauth.LocalWebserverAuth() 
+    drive = GoogleDrive(gauth)
+    return drive
+
+# --- Функции для работы с файлами в облаке ---
+
+def get_folders_gdrive(drive, parent_folder_id):
+    """Получает список папок внутри родительской папки."""
+    folder_list = drive.ListFile({
+        'q': f"'{parent_folder_id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'"
+    }).GetList()
+    return {f['title']: f['id'] for f in folder_list}
+
+def upload_file_to_gdrive(drive, file_name, file_data, parent_folder_id):
+    """Загружает файл в указанную папку."""
+    file = drive.CreateFile({
+        'title': file_name,
+        'parents': [{'id': parent_folder_id}]
+    })
+    file.SetContentFile(file_data)
+    file.Upload()
+    return file['id']
+
+def download_file_from_gdrive(drive, file_id):
+    """Скачивает файл."""
+    file = drive.CreateFile({'id': file_id})
+    file_content = file.GetContentString()
+    return file_content
+
+def list_files_in_folder_gdrive(drive, folder_id, extensions):
+    """Получает список файлов в папке с фильтром по расширению."""
+    query = f"'{folder_id}' in parents and trashed=false"
+    file_list = drive.ListFile({'q': query}).GetList()
+    return [
+        f for f in file_list
+        if any(f['title'].lower().endswith(ext) for ext in extensions)
+    ]
+
+def delete_file_from_gdrive(drive, file_id):
+    """Удаляет файл из облака."""
+    file = drive.CreateFile({'id': file_id})
+    file.Delete()
+
+# --- Логика вашего Streamlit-приложения ---
+
 def show_media_gallery_page():
-    """Page to manage media files with folder support."""
-    st.header("🖼️ Медиа-галерея")
+    st.header("🖼️ Медиа-галерея (Google Drive)")
     
-    # Create tabs for different media types
-    tab_images, tab_docs, tab_videos, tab_folders = st.tabs(["Фотографии", "Документы", "Видео", "Управление папками"])
+    # Инициализируем соединение с GDrive в кэше
+    if 'drive' not in st.session_state:
+        st.session_state.drive = init_gdrive()
+
+    # Получение ID корневых папок
+    # Вам нужно будет создать эти папки вручную и сохранить их ID
+    # Например, 'images_id' = '1a2b3c...'
+    # 'documents_id' = '4d5e6f...' и т.д.
+    ROOT_FOLDERS = {
+        "images": "YOUR_IMAGES_FOLDER_ID",
+        "documents": "YOUR_DOCUMENTS_FOLDER_ID",
+        "videos": "YOUR_VIDEOS_FOLDER_ID"
+    }
     
-    # Helper function to get all folders
-    def get_folders(base_path):
-        folders = []
-        for item in os.listdir(base_path):
-            item_path = os.path.join(base_path, item)
-            if os.path.isdir(item_path):
-                folders.append(item)
-        return folders
-    
-    # Folder management tab
-    with tab_folders:
-        st.subheader("📂 Управление папками")
-        
-        # Create new folder
-        with st.expander("➕ Создать новую папку", expanded=True):
-            with st.form("create_folder_form"):
-                folder_type = st.selectbox("Тип папки", ["Фото", "Документ", "Видео", "Общая"])
-                folder_name = st.text_input("Название папки*")
-                
-                if st.form_submit_button("Создать папку"):
-                    if folder_name:
-                        # Determine base folder based on type
-                        base_folder = {
-                            "Фото": "images",
-                            "Документ": "documents",
-                            "Видео": "videos",
-                            "Общая": "general"
-                        }.get(folder_type, "general")
-                        
-                        full_path = os.path.join(MEDIA_FOLDER, base_folder, folder_name)
-                        try:
-                            os.makedirs(full_path, exist_ok=True)
-                            st.success(f"Папка '{folder_name}' создана в разделе '{folder_type}'!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Ошибка при создании папки: {e}")
-                    else:
-                        st.error("Введите название папки")
-        
-        # List existing folders
-        st.subheader("📁 Существующие папки")
-        
-        for media_type, base_folder in [("Фото", "images"), 
-                                      ("Документы", "documents"), 
-                                      ("Видео", "videos"),
-                                      ("Общие", "general")]:
-            
-            folder_path = os.path.join(MEDIA_FOLDER, base_folder)
-            if os.path.exists(folder_path):
-                folders = get_folders(folder_path)
-                if folders:
-                    with st.expander(f"{media_type} ({len(folders)})"):
-                        for folder in folders:
-                            col1, col2 = st.columns([4, 1])
-                            with col1:
-                                st.write(f"📁 {folder}")
-                            with col2:
-                                if st.button("🗑️", key=f"del_{base_folder}_{folder}"):
-                                    try:
-                                        os.rmdir(os.path.join(folder_path, folder))
-                                        st.success(f"Папка '{folder}' удалена!")
-                                        st.rerun()
-                                    except OSError:
-                                        st.error("Папка не пуста! Удалите сначала файлы.")
-    
-    # Upload section with folder selection
-    with st.expander("⬆️ Загрузить файлы", expanded=False):
-        with st.form("upload_media_form"):
-            file_type = st.selectbox("Тип файла", ["Фото", "Документ", "Видео"])
-            # Get available folders for selected type
-            base_folder = {
-                "Фото": "images",
-                "Документ": "documents",
-                "Видео": "videos"
-            }.get(file_type, "general")
-            
-            target_folders = get_folders(os.path.join(MEDIA_FOLDER, base_folder))
-            target_folder = st.selectbox(
-                "Папка назначения",
-                ["Основная папка"] + target_folders
-            )
-            
-            uploaded_files = st.file_uploader(
-                "Выберите файлы",
-                type=["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "mp4", "mov"],
-                accept_multiple_files=True
-            )
-            
-            if st.form_submit_button("Загрузить"):
-                if uploaded_files:
-                    for uploaded_file in uploaded_files:
-                        # Determine target path
-                        if target_folder == "Основная папка":
-                            dest_folder = os.path.join(MEDIA_FOLDER, base_folder)
-                        else:
-                            dest_folder = os.path.join(MEDIA_FOLDER, base_folder, target_folder)
-                        
-                        os.makedirs(dest_folder, exist_ok=True)
-                        file_path = os.path.join(dest_folder, uploaded_file.name)
-                        
-                        # Check for existing file
-                        if os.path.exists(file_path):
-                            st.warning(f"Файл '{uploaded_file.name}' уже существует в папке '{target_folder}'")
-                            continue
-                        
-                        try:
-                            with open(file_path, "wb") as f:
-                                f.write(uploaded_file.getbuffer())
-                        except Exception as e:
-                            st.error(f"Ошибка при загрузке файла '{uploaded_file.name}': {e}")
-                    
-                    st.success(f"Загружено {len(uploaded_files)} файлов в папку '{target_folder}'!")
+    # --- Загрузка файлов ---
+    with st.expander("⬆️ Загрузить файлы", expanded=True):
+        uploaded_file = st.file_uploader("Выберите файл", type=["jpg", "png", "pdf", "mp4"])
+        file_type = st.selectbox("Тип файла", ["Фото", "Документ", "Видео"])
+
+        if uploaded_file and st.button("Загрузить в облако"):
+            parent_id = ROOT_FOLDERS.get(file_type.lower())
+            if parent_id:
+                try:
+                    upload_file_to_gdrive(st.session_state.drive, uploaded_file.name, uploaded_file.getvalue(), parent_id)
+                    st.success("Файл успешно загружен!")
                     st.rerun()
-                else:
-                    st.error("Пожалуйста, выберите хотя бы один файл")
+                except Exception as e:
+                    st.error(f"Ошибка при загрузке: {e}")
+            else:
+                st.error("Неизвестный тип файла.")
 
-    # Display media by type with folder support
-    def display_media_with_folders(media_type, extensions, tab):
-        base_folder = {
-            "Фото": "images",
-            "Документ": "documents",
-            "Видео": "videos"
-        }.get(media_type, "general")
-        
-        main_folder_path = os.path.join(MEDIA_FOLDER, base_folder)
-        
-        if not os.path.exists(main_folder_path):
-            tab.info(f"Нет {media_type.lower()} в галерее.")
-            return
-        
-        # Get all folders for this media type
-        folders = get_folders(main_folder_path)
-        
-        if not folders:
-            # Display files from main folder
-            display_files_from_folder(main_folder_path, extensions, tab, media_type)
-        else:
-            # Create tabs for each folder
-            folder_tabs = tab.tabs(["Основная папка"] + folders)
-            
-            # Main folder
-            with folder_tabs[0]:
-                display_files_from_folder(main_folder_path, extensions, tab, media_type)
-            
-            # Each subfolder
-            for i, folder in enumerate(folders, 1):
-                with folder_tabs[i]:
-                    folder_path = os.path.join(main_folder_path, folder)
-                    display_files_from_folder(folder_path, extensions, tab, media_type, folder)
-
-    def display_files_from_folder(folder_path, extensions, tab, media_type, folder_name=None):
-        files = []
-        for file in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, file)
-            if os.path.isfile(file_path) and file.lower().endswith(extensions):
-                files.append(file_path)
-        
-        if not files:
-            tab.info(f"Нет файлов в папке {folder_name if folder_name else 'основной'}")
-            return
-        
-        if media_type == "Фото":
-            cols = tab.columns(3)
-            for i, img_path in enumerate(files):
-                with cols[i % 3]:
-                    st.image(img_path, use_column_width=True)
-                    st.caption(os.path.basename(img_path))
-                    if st.button("Удалить", key=f"del_img_{img_path}"):
-                        os.remove(img_path)
-                        st.success("Файл удален!")
-                        st.rerun()
-        
-        elif media_type == "Документ":
-            for doc_path in files:
-                doc_name = os.path.basename(doc_path)
-                st.download_button(
-                    label=f"📄 {doc_name}",
-                    data=open(doc_path, "rb").read(),
-                    file_name=doc_name,
-                    mime="application/octet-stream",
-                    key=f"doc_{doc_path}"
-                )
-                if st.button("Удалить", key=f"del_doc_{doc_path}"):
-                    os.remove(doc_path)
-                    st.success("Файл удален!")
-                    st.rerun()
-        
-        elif media_type == "Видео":
-            for video_path in files:
-                st.video(video_path)
-                st.caption(os.path.basename(video_path))
-                if st.button("Удалить", key=f"del_vid_{video_path}"):
-                    os.remove(video_path)
-                    st.success("Файл удален!")
-                    st.rerun()
-
-    # Display media in respective tabs with folder support
-    with tab_images:
-        st.subheader("Фотографии")
-        display_media_with_folders("Фото", ('.png', '.jpg', '.jpeg', '.gif'), st)
-
-    with tab_docs:
-        st.subheader("Документы")
-        display_media_with_folders("Документ", ('.pdf', '.doc', '.docx'), st)
-
-    with tab_videos:
-        st.subheader("Видео")
-        display_media_with_folders("Видео", ('.mp4', '.mov'), st)
-
+    # --- Отображение файлов ---
+    # Эта часть сложнее, так как Streamlit не может напрямую отображать файлы по ID.
+    # Нужно сначала скачать их во временную папку, а потом отобразить.
+    # Но для демонстрации это можно упростить, например, просто показывать ссылки на файлы.
+    
+    st.subheader("📁 Фотографии")
+    try:
+        image_files = list_files_in_folder_gdrive(st.session_state.drive, ROOT_FOLDERS['images'], ('.png', '.jpg'))
+        for file in image_files:
+            st.write(f"🖼️ {file['title']}")
+            # Для отображения нужно скачать файл
+            # Пример:
+            # file.GetContentFile("temp_file.png")
+            # st.image("temp_file.png")
+    except Exception as e:
+        st.error(f"Не удалось получить список файлов: {e}")
 def show_bulk_upload_page():
     """Page for bulk data upload via CSV."""
     st.header("📤 Массовая загрузка данных")
@@ -2973,17 +2865,21 @@ def show_payments_report():
             key="export_payments"
         )
     # Умный калькулятор
+    # Улучшенный калькулятор
     with st.expander("🧮 Умный калькулятор", expanded=True):
         calc_col1, calc_col2 = st.columns([3, 2])
         
         with calc_col1:
-            calc_input = st.text_input("Введите выражение (например: 5000/8*2):", key="payment_calculator")
+            calc_input = st.text_input("Введите выражение (поддерживает %, например: 5000*10%):", 
+                                     key="payment_calculator")
             try:
                 if calc_input:
-                    result = eval(calc_input)  # Безопасное вычисление
+                    # Заменяем % на /100 для поддержки процентов
+                    calc_input = calc_input.replace('%', '/100')
+                    result = eval(calc_input)
                     st.success(f"Результат: {result:.2f} ₽")
-            except:
-                st.error("Ошибка в выражении")
+            except Exception as e:
+                st.error(f"Ошибка в выражении: {str(e)}")
         
         with calc_col2:
             direction_transfer = st.selectbox(
@@ -2993,35 +2889,39 @@ def show_payments_report():
             )
             
             if direction_transfer:
-                # Находим направление
-                direction = next(d for d in st.session_state.data['directions'] if d['name'] == direction_transfer)
-                monthly_cost = direction.get('cost', 0)
+                direction = next((d for d in st.session_state.data['directions'] 
+                                if d['name'] == direction_transfer), None)
                 
-                # Считаем количество занятий в месяц
-                lessons_in_month = len([s for s in st.session_state.data['schedule'] 
-                                      if s['direction'] == direction_transfer])
-                
-                if lessons_in_month > 0:
-                    cost_per_lesson = monthly_cost / lessons_in_month
-                    st.write(f"Стоимость одного занятия: {cost_per_lesson:.2f} ₽")
+                if direction:
+                    monthly_cost = direction.get('cost', 0)
+                    lessons_in_month = len([s for s in st.session_state.data['schedule'] 
+                                          if s['direction'] == direction_transfer])
                     
-                    num_lessons = st.number_input("Кол-во переносимых занятий", min_value=1, value=1)
-                    transfer_cost = cost_per_lesson * num_lessons
-                    st.success(f"Сумма к переносу: {transfer_cost:.2f} ₽")
-                    
-                    # Предложение равноценных занятий
-                    st.subheader("Варианты переноса:")
-                    equivalent_directions = [
-                        d for d in st.session_state.data['directions'] 
-                        if abs(d.get('cost', 0) - transfer_cost) < transfer_cost*0.2  # ±20% от суммы
-                    ]
-                    
-                    for eq_dir in equivalent_directions:
-                        eq_cost = eq_dir.get('cost', 0)
-                        eq_lessons = round(transfer_cost / (eq_cost / len(
-                            [s for s in st.session_state.data['schedule'] 
-                             if s['direction'] == eq_dir['name']])), 1)
-                        st.write(f"- {eq_dir['name']}: {eq_lessons} занятий (~{eq_cost} ₽/мес)")
+                    if lessons_in_month > 0:
+                        cost_per_lesson = monthly_cost / lessons_in_month
+                        st.markdown(f"**Стоимость одного занятия:** {cost_per_lesson:.2f} ₽")
+                        
+                        num_lessons = st.number_input("Кол-во переносимых занятий", 
+                                                    min_value=1, value=1, key="num_transfer_lessons")
+                        transfer_cost = cost_per_lesson * num_lessons
+                        
+                        if st.button("Рассчитать", key="calculate_transfer"):
+                            st.success(f"**Сумма к переносу:** {transfer_cost:.2f} ₽")
+                            
+                            # Поиск равноценных занятий
+                            st.subheader("Варианты переноса:")
+                            for eq_dir in st.session_state.data['directions']:
+                                if eq_dir['name'] != direction_transfer:
+                                    eq_lessons = len([s for s in st.session_state.data['schedule'] 
+                                                    if s['direction'] == eq_dir['name']])
+                                    if eq_lessons > 0:
+                                        eq_cost_per_lesson = eq_dir.get('cost', 0) / eq_lessons
+                                        eq_num = transfer_cost / eq_cost_per_lesson
+                                        st.write(
+                                            f"- {eq_dir['name']}: "
+                                            f"{eq_num:.1f} занятий "
+                                            f"(~{eq_cost_per_lesson:.2f} ₽/занятие)"
+                                        )
     # Статистика
     st.subheader("📈 Статистика")
     total_payments = df_filtered['amount'].sum()
@@ -3218,17 +3118,21 @@ def show_reception_helper():
                 else:
                     st.info("К сожалению, нет подходящих направлений для указанных параметров.")
                 # Умный калькулятор
+        # Улучшенный калькулятор
         with st.expander("🧮 Умный калькулятор", expanded=True):
             calc_col1, calc_col2 = st.columns([3, 2])
             
             with calc_col1:
-                calc_input = st.text_input("Введите выражение (например: 5000/8*2):", key="payment_calculator")
+                calc_input = st.text_input("Введите выражение (поддерживает %, например: 5000*10%):", 
+                                        key="payment_calculator")
                 try:
                     if calc_input:
-                        result = eval(calc_input)  # Безопасное вычисление
+                        # Заменяем % на /100 для поддержки процентов
+                        calc_input = calc_input.replace('%', '/100')
+                        result = eval(calc_input)
                         st.success(f"Результат: {result:.2f} ₽")
-                except:
-                    st.error("Ошибка в выражении")
+                except Exception as e:
+                    st.error(f"Ошибка в выражении: {str(e)}")
             
             with calc_col2:
                 direction_transfer = st.selectbox(
@@ -3238,35 +3142,39 @@ def show_reception_helper():
                 )
                 
                 if direction_transfer:
-                    # Находим направление
-                    direction = next(d for d in st.session_state.data['directions'] if d['name'] == direction_transfer)
-                    monthly_cost = direction.get('cost', 0)
+                    direction = next((d for d in st.session_state.data['directions'] 
+                                    if d['name'] == direction_transfer), None)
                     
-                    # Считаем количество занятий в месяц
-                    lessons_in_month = len([s for s in st.session_state.data['schedule'] 
-                                        if s['direction'] == direction_transfer])
-                    
-                    if lessons_in_month > 0:
-                        cost_per_lesson = monthly_cost / lessons_in_month
-                        st.write(f"Стоимость одного занятия: {cost_per_lesson:.2f} ₽")
+                    if direction:
+                        monthly_cost = direction.get('cost', 0)
+                        lessons_in_month = len([s for s in st.session_state.data['schedule'] 
+                                            if s['direction'] == direction_transfer])
                         
-                        num_lessons = st.number_input("Кол-во переносимых занятий", min_value=1, value=1)
-                        transfer_cost = cost_per_lesson * num_lessons
-                        st.success(f"Сумма к переносу: {transfer_cost:.2f} ₽")
-                        
-                        # Предложение равноценных занятий
-                        st.subheader("Варианты переноса:")
-                        equivalent_directions = [
-                            d for d in st.session_state.data['directions'] 
-                            if abs(d.get('cost', 0) - transfer_cost) < transfer_cost*0.2  # ±20% от суммы
-                        ]
-                        
-                        for eq_dir in equivalent_directions:
-                            eq_cost = eq_dir.get('cost', 0)
-                            eq_lessons = round(transfer_cost / (eq_cost / len(
-                                [s for s in st.session_state.data['schedule'] 
-                                if s['direction'] == eq_dir['name']])), 1)
-                            st.write(f"- {eq_dir['name']}: {eq_lessons} занятий (~{eq_cost} ₽/мес)")
+                        if lessons_in_month > 0:
+                            cost_per_lesson = monthly_cost / lessons_in_month
+                            st.markdown(f"**Стоимость одного занятия:** {cost_per_lesson:.2f} ₽")
+                            
+                            num_lessons = st.number_input("Кол-во переносимых занятий", 
+                                                        min_value=1, value=1, key="num_transfer_lessons")
+                            transfer_cost = cost_per_lesson * num_lessons
+                            
+                            if st.button("Рассчитать", key="calculate_transfer"):
+                                st.success(f"**Сумма к переносу:** {transfer_cost:.2f} ₽")
+                                
+                                # Поиск равноценных занятий
+                                st.subheader("Варианты переноса:")
+                                for eq_dir in st.session_state.data['directions']:
+                                    if eq_dir['name'] != direction_transfer:
+                                        eq_lessons = len([s for s in st.session_state.data['schedule'] 
+                                                        if s['direction'] == eq_dir['name']])
+                                        if eq_lessons > 0:
+                                            eq_cost_per_lesson = eq_dir.get('cost', 0) / eq_lessons
+                                            eq_num = transfer_cost / eq_cost_per_lesson
+                                            st.write(
+                                                f"- {eq_dir['name']}: "
+                                                f"{eq_num:.1f} занятий "
+                                                f"(~{eq_cost_per_lesson:.2f} ₽/занятие)"
+                                            )
     with tab2:
         st.header("📝 Запись на разовые занятия")
         # 1. Выбор или добавление ученика
