@@ -893,7 +893,12 @@ def show_student_card(student_id):
                     st.rerun()
 
         # Добавление направления
-        available = [d['name'] for d in st.session_state.data['directions'] if d['name'] not in student["directions"]]
+        available = (
+            [d['name'] for d in st.session_state.data['directions'] if d['name'] not in student["directions"]] +
+            [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', []) 
+            if f"{s['parent']} ({s['name']})" not in student.get("directions", [])]
+        )
+
         if available:
             with st.form(f"assign_dir_form_{student['id']}"):
                 new_dir = st.selectbox("Добавить направление", available, key=f"dir_sel_{student['id']}")
