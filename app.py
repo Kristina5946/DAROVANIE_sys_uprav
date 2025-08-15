@@ -1231,14 +1231,14 @@ def show_teacher_card(teacher_id):
                             "Тип": st.column_config.TextColumn("Тип занятия")
                         }
                     )
-                
-                # Кнопка экспорта
+                # Кнопка экспорта - добавляем teacher_id в key
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     "📥 Экспорт в CSV",
                     data=csv,
                     file_name=f"attendance_{teacher['name']}_{direction_name}.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    key=f"export_csv_{teacher_id}_{direction_name}"  # Уникальный ключ
                 )
             else:
                 st.info("Нет данных о посещениях.")
