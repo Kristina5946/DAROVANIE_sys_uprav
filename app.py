@@ -1009,7 +1009,7 @@ def show_student_card(student_id):
                     to_delete = edited_att[edited_att['Удалить']]
                     
                     for _, row in to_delete.iterrows():
-                        date_key = row['Дата'].strftime("%Y-%m-%d")
+                        date_key = row['Дата'].strftime("%Y-%m-%d") if hasattr(row['Дата'], 'strftime') else row['Дата']
                         direction = row['Фактическое направление']
                         
                         # Находим и удаляем запись о посещении
@@ -1671,7 +1671,11 @@ def show_schedule_page():
         if l['date'] == selected_date.strftime("%Y-%m-%d")
     ]
 
-    all_lessons = regular_lessons + single_lessons
+    # Объединяем и сортируем по времени начала занятия
+    all_lessons = sorted(
+        regular_lessons + single_lessons,
+        key=lambda x: datetime.strptime(x['start_time'], "%H:%M").time()
+    )
 
     if all_lessons:
         for lesson in all_lessons:
@@ -2956,7 +2960,56 @@ def show_payments_report():
             mime="text/csv",
             key="export_payments"
         )
-    
+    # Умный калькулятор
+    with st.expander("🧮 Умный калькулятор", expanded=True):
+        calc_col1, calc_col2 = st.columns([3, 2])
+        
+        with calc_col1:
+            calc_input = st.text_input("Введите выражение (например: 5000/8*2):", key="payment_calculator")
+            try:
+                if calc_input:
+                    result = eval(calc_input)  # Безопасное вычисление
+                    st.success(f"Результат: {result:.2f} ₽")
+            except:
+                st.error("Ошибка в выражении")
+        
+        with calc_col2:
+            direction_transfer = st.selectbox(
+                "Перенос занятий по направлению",
+                [None] + [d['name'] for d in st.session_state.data['directions']],
+                key="transfer_direction"
+            )
+            
+            if direction_transfer:
+                # Находим направление
+                direction = next(d for d in st.session_state.data['directions'] if d['name'] == direction_transfer)
+                monthly_cost = direction.get('cost', 0)
+                
+                # Считаем количество занятий в месяц
+                lessons_in_month = len([s for s in st.session_state.data['schedule'] 
+                                      if s['direction'] == direction_transfer])
+                
+                if lessons_in_month > 0:
+                    cost_per_lesson = monthly_cost / lessons_in_month
+                    st.write(f"Стоимость одного занятия: {cost_per_lesson:.2f} ₽")
+                    
+                    num_lessons = st.number_input("Кол-во переносимых занятий", min_value=1, value=1)
+                    transfer_cost = cost_per_lesson * num_lessons
+                    st.success(f"Сумма к переносу: {transfer_cost:.2f} ₽")
+                    
+                    # Предложение равноценных занятий
+                    st.subheader("Варианты переноса:")
+                    equivalent_directions = [
+                        d for d in st.session_state.data['directions'] 
+                        if abs(d.get('cost', 0) - transfer_cost) < transfer_cost*0.2  # ±20% от суммы
+                    ]
+                    
+                    for eq_dir in equivalent_directions:
+                        eq_cost = eq_dir.get('cost', 0)
+                        eq_lessons = round(transfer_cost / (eq_cost / len(
+                            [s for s in st.session_state.data['schedule'] 
+                             if s['direction'] == eq_dir['name']])), 1)
+                        st.write(f"- {eq_dir['name']}: {eq_lessons} занятий (~{eq_cost} ₽/мес)")
     # Статистика
     st.subheader("📈 Статистика")
     total_payments = df_filtered['amount'].sum()
@@ -3152,6 +3205,56 @@ def show_reception_helper():
                                             st.caption(direction['description'])
                 else:
                     st.info("К сожалению, нет подходящих направлений для указанных параметров.")
+                # Умный калькулятор
+        with st.expander("🧮 Умный калькулятор", expanded=True):
+            calc_col1, calc_col2 = st.columns([3, 2])
+            
+            with calc_col1:
+                calc_input = st.text_input("Введите выражение (например: 5000/8*2):", key="payment_calculator")
+                try:
+                    if calc_input:
+                        result = eval(calc_input)  # Безопасное вычисление
+                        st.success(f"Результат: {result:.2f} ₽")
+                except:
+                    st.error("Ошибка в выражении")
+            
+            with calc_col2:
+                direction_transfer = st.selectbox(
+                    "Перенос занятий по направлению",
+                    [None] + [d['name'] for d in st.session_state.data['directions']],
+                    key="transfer_direction"
+                )
+                
+                if direction_transfer:
+                    # Находим направление
+                    direction = next(d for d in st.session_state.data['directions'] if d['name'] == direction_transfer)
+                    monthly_cost = direction.get('cost', 0)
+                    
+                    # Считаем количество занятий в месяц
+                    lessons_in_month = len([s for s in st.session_state.data['schedule'] 
+                                        if s['direction'] == direction_transfer])
+                    
+                    if lessons_in_month > 0:
+                        cost_per_lesson = monthly_cost / lessons_in_month
+                        st.write(f"Стоимость одного занятия: {cost_per_lesson:.2f} ₽")
+                        
+                        num_lessons = st.number_input("Кол-во переносимых занятий", min_value=1, value=1)
+                        transfer_cost = cost_per_lesson * num_lessons
+                        st.success(f"Сумма к переносу: {transfer_cost:.2f} ₽")
+                        
+                        # Предложение равноценных занятий
+                        st.subheader("Варианты переноса:")
+                        equivalent_directions = [
+                            d for d in st.session_state.data['directions'] 
+                            if abs(d.get('cost', 0) - transfer_cost) < transfer_cost*0.2  # ±20% от суммы
+                        ]
+                        
+                        for eq_dir in equivalent_directions:
+                            eq_cost = eq_dir.get('cost', 0)
+                            eq_lessons = round(transfer_cost / (eq_cost / len(
+                                [s for s in st.session_state.data['schedule'] 
+                                if s['direction'] == eq_dir['name']])), 1)
+                            st.write(f"- {eq_dir['name']}: {eq_lessons} занятий (~{eq_cost} ₽/мес)")
     with tab2:
         st.header("📝 Запись на разовые занятия")
         # 1. Выбор или добавление ученика
@@ -3479,7 +3582,8 @@ else:
         st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
         st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
         st.sidebar.button("👋 Помощник ресепшена", on_click=lambda: _navigate_to('reception_helper'))
-    
+        st.sidebar.markdown("---")
+        st.sidebar.button("📊 Отчет по оплатам", on_click=lambda: _navigate_to('payments_report'))
     st.sidebar.markdown("---")
     st.sidebar.text(f"👤 {st.session_state.username} ({st.session_state.role})")
     st.sidebar.button("🚪 Выйти", on_click=logout)
