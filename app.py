@@ -123,6 +123,19 @@ def github_headers():
         return None
     return {"Authorization": f"token {GITHUB_TOKEN}"}
 
+# Функция для безопасного преобразования времени
+def safe_time_parse(time_str):
+    try:
+        # Пробуем разные форматы времени
+        for fmt in ("%H:%M", "%H:%M:%S", "%H.%M"):
+            try:
+                return datetime.strptime(time_str, fmt).time()
+            except ValueError:
+                continue
+        # Если ни один формат не подошел, возвращаем минимальное время
+        return datetime.min.time()
+    except:
+        return datetime.min.time()
 
 def archive_data():
     """Переносит старые данные в отдельный архивный Gist"""
@@ -1671,11 +1684,10 @@ def show_schedule_page():
         if l['date'] == selected_date.strftime("%Y-%m-%d")
     ]
 
-    # Объединяем и сортируем по времени начала занятия
+    # Сортировка занятий с защитой от ошибок формата
     all_lessons = sorted(
         regular_lessons + single_lessons,
-        key=lambda x: datetime.strptime(x['start_time'], "%H:%M").time()
-    )
+        key=lambda x: safe_time_parse(x.get('start_time', '00:00')))
 
     if all_lessons:
         for lesson in all_lessons:
