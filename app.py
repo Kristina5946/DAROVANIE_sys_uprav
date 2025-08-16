@@ -1113,7 +1113,11 @@ def show_teacher_card(teacher_id):
         st.warning("Преподаватель не найден.")
         return
 
-    # Ключ для хранения состояния в session_state
+    # Функция для перезагрузки компонента
+    def rerun():
+        st.session_state[f"rerun_{teacher_id}"] = not st.session_state.get(f"rerun_{teacher_id}", False)
+    
+    # Ключ для хранения состояния
     state_key = f"teacher_{teacher_id}_state"
     
     # Инициализация состояния
@@ -1149,44 +1153,29 @@ def show_teacher_card(teacher_id):
             cols = st.columns(4)
             for i, direction in enumerate(current_directions):
                 with cols[i % 4]:
-                    if st.button(f"❌ {direction}", 
-                               key=f"remove_{teacher_id}_{direction}",
-                               help=f"Удалить направление {direction}"):
+                    if st.button(f"❌ {direction}", key=f"remove_{teacher_id}_{direction}"):
                         if direction in st.session_state[state_key]["added_directions"]:
                             st.session_state[state_key]["added_directions"].remove(direction)
                         else:
                             st.session_state[state_key]["deleted_directions"].append(direction)
                         st.session_state[state_key]["edited"] = True
-                        st.experimental_rerun()
-        else:
-            st.info("Нет назначенных направлений")
+                        rerun()
 
-        # Добавление нового направления
-        with st.form(f"add_dir_form_{teacher_id}"):
-            available_directions = [
-                d['name'] for d in st.session_state.data['directions'] 
-                if d['name'] not in current_directions
-            ] + [
-                f"{s['parent']} ({s['name']})" 
-                for s in st.session_state.data.get('subdirections', [])
-                if f"{s['parent']} ({s['name']})" not in current_directions
-            ]
-
-            new_direction = st.selectbox(
-                "Выберите направление для добавления", 
-                available_directions,
-                key=f"dir_select_{teacher_id}"
-            )
-            
+        # Форма добавления нового направления
+        with st.form(key=f"add_direction_form_{teacher_id}"):
+            new_direction = st.text_input("Добавить новое направление:", key=f"new_dir_{teacher_id}")
             if st.form_submit_button("➕ Добавить направление"):
-                st.session_state[state_key]["added_directions"].append(new_direction)
-                st.session_state[state_key]["edited"] = True
-                st.experimental_rerun()
+                if new_direction and new_direction not in current_directions:
+                    st.session_state[state_key]["added_directions"].append(new_direction)
+                    st.session_state[state_key]["edited"] = True
+                    rerun()
+                elif new_direction in current_directions:
+                    st.warning("Это направление уже есть у преподавателя")
 
         # Кнопка сохранения изменений
         if st.session_state[state_key]["edited"]:
             if st.button("💾 Сохранить изменения", key=f"save_{teacher_id}"):
-                # Применяем изменения к основным данным
+                # Применяем изменения
                 teacher["directions"] = [
                     d for d in teacher["directions"] 
                     if d not in st.session_state[state_key]["deleted_directions"]
@@ -1209,19 +1198,16 @@ def show_teacher_card(teacher_id):
                 
                 st.success("Изменения сохранены!")
                 time.sleep(1)
-                st.experimental_rerun()
+                rerun()
 
-
-        # Создаем карту соответствия поднаправлений к основным направлениям
+        # Статистика и посещения
         direction_map = {
             f"{s['parent']} ({s['name']})": s['parent'] 
             for s in st.session_state.data.get('subdirections', [])
         }
 
-        # Собираем уникальные направления преподавателя (основные + поднаправления)
         all_directions = set()
         for dir_name in teacher.get('directions', []):
-            # Если это поднаправление - добавляем основное направление
             if dir_name in direction_map:
                 all_directions.add(direction_map[dir_name])
             else:
@@ -1230,21 +1216,17 @@ def show_teacher_card(teacher_id):
         for direction_name in sorted(all_directions):
             st.markdown(f"### 📘 {direction_name}")
             
-            # Найдем все занятия (включая поднаправления и разовые)
             lessons = []
-            # Основное направление
             lessons.extend([l for l in st.session_state.data['schedule']
-                        if l['direction'] == direction_name 
-                        and l['teacher'] == teacher['name']])
+                          if l['direction'] == direction_name 
+                          and l['teacher'] == teacher['name']])
             
-            # Поднаправления этого направления
             subdirections = [k for k, v in direction_map.items() if v == direction_name]
             for subdir in subdirections:
                 lessons.extend([l for l in st.session_state.data['schedule']
-                            if l['direction'] == subdir
-                            and l['teacher'] == teacher['name']])
+                              if l['direction'] == subdir
+                              and l['teacher'] == teacher['name']])
             
-            # Разовые занятия по этому направлению
             single_lessons = [
                 l for l in st.session_state.data.get('single_lessons', [])
                 if l['teacher'] == teacher['name'] and l['direction'] == direction_name
@@ -1254,21 +1236,17 @@ def show_teacher_card(teacher_id):
                 st.info("Нет занятий по этому направлению.")
                 continue
 
-            # Найдем всех учеников (включая поднаправления и разовые)
             students_in_dir = []
-            # Основное направление
             students_in_dir.extend([s for s in st.session_state.data['students'] 
-                                if direction_name in s.get('directions', [])])
+                                 if direction_name in s.get('directions', [])])
             
-            # Поднаправления
             for subdir in subdirections:
                 students_in_dir.extend([s for s in st.session_state.data['students'] 
-                                    if subdir in s.get('directions', [])])
+                                      if subdir in s.get('directions', [])])
             
-            # Ученики из разовых занятий
             for lesson in single_lessons:
                 student = next((s for s in st.session_state.data['students'] 
-                            if s['id'] == lesson['student_id']), None)
+                             if s['id'] == lesson['student_id']), None)
                 if student and student not in students_in_dir:
                     students_in_dir.append(student)
 
@@ -1276,11 +1254,9 @@ def show_teacher_card(teacher_id):
                 st.info("Нет учеников на этом направлении.")
                 continue
 
-            # Соберем все данные о посещениях
             attendance_data = []
             attendance = st.session_state.data.get("attendance", {})
 
-            # Обрабатываем регулярные занятия
             for student in students_in_dir:
                 for lesson in lessons:
                     lesson_id = lesson.get('id')
@@ -1288,7 +1264,6 @@ def show_teacher_card(teacher_id):
                         if lesson_id in day_lessons and student['id'] in day_lessons[lesson_id]:
                             record = day_lessons[lesson_id][student['id']]
                             
-                            # Проверка оплаты
                             paid_status = record.get('paid', False)
                             if not paid_status:
                                 for payment in st.session_state.data['payments']:
@@ -1319,7 +1294,6 @@ def show_teacher_card(teacher_id):
                                 "Тип": "Поднаправление" if lesson['direction'] in subdirections else "Основное"
                             })
 
-            # Обрабатываем разовые занятия
             for lesson in single_lessons:
                 date_str = lesson['date']
                 lesson_id = lesson['id']
@@ -1349,12 +1323,10 @@ def show_teacher_card(teacher_id):
                     })
 
             if attendance_data:
-                # Создаем DataFrame и сортируем по дате
                 df = pd.DataFrame(attendance_data)
                 df['Дата'] = pd.to_datetime(df['Дата'])
                 df = df.sort_values('Дата', ascending=False)
                 
-                # Отображаем таблицу
                 st.dataframe(
                     df.drop(columns=['Тип']),
                     use_container_width=True,
@@ -1366,7 +1338,6 @@ def show_teacher_card(teacher_id):
                     }
                 )
                 
-                # Детализация в expander'е
                 with st.expander("🔍 Детализация по типам занятий"):
                     st.dataframe(
                         df,
@@ -1377,14 +1348,14 @@ def show_teacher_card(teacher_id):
                             "Тип": st.column_config.TextColumn("Тип занятия")
                         }
                     )
-                # Кнопка экспорта - добавляем teacher_id в key
+                
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     "📥 Экспорт в CSV",
                     data=csv,
                     file_name=f"attendance_{teacher['name']}_{direction_name}.csv",
                     mime="text/csv",
-                    key=f"export_csv_{teacher_id}_{direction_name}"  # Уникальный ключ
+                    key=f"export_csv_{teacher_id}_{direction_name}"
                 )
             else:
                 st.info("Нет данных о посещениях.")
