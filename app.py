@@ -484,7 +484,7 @@ if st.session_state.get('authenticated') and st.session_state.role == 'admin':
                 st.sidebar.error(f"❌ Ошибка подключения: {resp.status_code} {resp.text}")
         except Exception as e:
             st.sidebar.error(f"❌ Ошибка подключения: {str(e)}")
-if st.session_state.role == 'admin':
+if st.session_state.role == 'admin' or st.session_state.role == 'reception':
     if st.sidebar.button("🔄 Обновить все данные"):
         refresh_data()
 # --- Page Content Functions ---
@@ -1130,39 +1130,54 @@ def show_teacher_card(teacher_id):
         if not isinstance(teacher.get("directions"), list):
             teacher["directions"] = [teacher["directions"]] if teacher.get("directions") else []
 
-        # Отображаем текущие направления с кнопкой удаления
-        for direction in teacher["directions"]:
-            with st.form(f"remove_dir_{teacher_id}_{direction}"):
-                if st.form_submit_button(f"❌ Убрать направление {direction}"):
-                    teacher["directions"].remove(direction)
-                    save_data(st.session_state.data)
-                    st.success(f"Направление {direction} удалено!")
-                    st.rerun()
+        # Отображаем текущие направления с компактными кнопками удаления
+        if teacher["directions"]:
+            st.write("Текущие направления:")
+            cols = st.columns(4)  # Создаем 4 колонки для кнопок
+            for i, direction in enumerate(teacher["directions"]):
+                with cols[i % 4]:  # Распределяем по колонкам
+                    if st.button(f"❌ {direction}", 
+                               key=f"remove_{teacher_id}_{direction}",
+                               help=f"Удалить направление {direction}"):
+                        teacher["directions"].remove(direction)
+                        st.session_state.data['teachers'] = [
+                            t if t['id'] != teacher_id else teacher 
+                            for t in st.session_state.data['teachers']
+                        ]
+                        save_data(st.session_state.data)
+                        st.rerun()
+        else:
+            st.info("Нет назначенных направлений")
 
         # Добавление нового направления
-        available_directions = [
-            d['name'] for d in st.session_state.data['directions'] 
-            if d['name'] not in teacher.get("directions", [])
-        ] + [
-            f"{s['parent']} ({s['name']})" 
-            for s in st.session_state.data.get('subdirections', [])
-            if f"{s['parent']} ({s['name']})" not in teacher.get("directions", [])
-        ]
+        with st.form(f"add_dir_form_{teacher_id}"):
+            # Доступные направления (исключая уже добавленные)
+            available_directions = [
+                d['name'] for d in st.session_state.data['directions'] 
+                if d['name'] not in teacher.get("directions", [])
+            ] + [
+                f"{s['parent']} ({s['name']})" 
+                for s in st.session_state.data.get('subdirections', [])
+                if f"{s['parent']} ({s['name']})" not in teacher.get("directions", [])
+            ]
 
-        if available_directions:
-            with st.form(f"add_dir_{teacher_id}"):
+            if available_directions:
                 new_direction = st.selectbox(
-                    "Добавить направление", 
+                    "Выберите направление для добавления", 
                     available_directions,
                     key=f"dir_select_{teacher_id}"
                 )
-                if st.form_submit_button("Добавить"):
+                if st.form_submit_button("➕ Добавить направление"):
                     teacher["directions"].append(new_direction)
+                    st.session_state.data['teachers'] = [
+                        t if t['id'] != teacher_id else teacher 
+                        for t in st.session_state.data['teachers']
+                    ]
                     save_data(st.session_state.data)
-                    st.success(f"Добавлено направление {new_direction}!")
                     st.rerun()
-        else:
-            st.info("Все доступные направления уже добавлены")
+            else:
+                st.info("Все доступные направления уже добавлены")
+                st.form_submit_button(disabled=True)
 
 
         # Создаем карту соответствия поднаправлений к основным направлениям
@@ -3591,7 +3606,7 @@ else:
         st.sidebar.button("📅 Расписание и посещения", on_click=lambda: _navigate_to('schedule'))
         st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
         st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
-        st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
+        #st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
         st.sidebar.button("📤 Массовая загрузка", on_click=lambda: _navigate_to('bulk_upload'))
         st.sidebar.button("👋 Помощник ресепшена", on_click=lambda: _navigate_to('reception_helper'))
         
@@ -3604,7 +3619,7 @@ else:
         st.sidebar.button("👩‍🏫 Преподаватели", on_click=lambda: _navigate_to('teachers'))
         st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
         st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
-        st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
+        #st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
     
     elif st.session_state.role == 'reception':
         st.sidebar.button("🏠 Главная", on_click=lambda: _navigate_to('home'))
