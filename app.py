@@ -1113,6 +1113,17 @@ def show_teacher_card(teacher_id):
         st.warning("Преподаватель не найден.")
         return
 
+    # Ключ для хранения состояния в session_state
+    state_key = f"teacher_{teacher_id}_state"
+    
+    # Инициализация состояния
+    if state_key not in st.session_state:
+        st.session_state[state_key] = {
+            "edited": False,
+            "deleted_directions": [],
+            "added_directions": []
+        }
+
     with st.expander(f"👩‍🏫 {teacher.get('name', 'Без имени')}", expanded=False):
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -1126,58 +1137,79 @@ def show_teacher_card(teacher_id):
         # 🎯 Направления преподавателя
         st.subheader("🎯 Управление направлениями")
         
-        # Гарантируем, что directions — список
-        if not isinstance(teacher.get("directions"), list):
-            teacher["directions"] = [teacher["directions"]] if teacher.get("directions") else []
+        # Актуальные направления с учетом изменений
+        current_directions = [
+            d for d in teacher["directions"] 
+            if d not in st.session_state[state_key]["deleted_directions"]
+        ] + st.session_state[state_key]["added_directions"]
 
         # Отображаем текущие направления с компактными кнопками удаления
-        if teacher["directions"]:
+        if current_directions:
             st.write("Текущие направления:")
-            cols = st.columns(4)  # Создаем 4 колонки для кнопок
-            for i, direction in enumerate(teacher["directions"]):
-                with cols[i % 4]:  # Распределяем по колонкам
+            cols = st.columns(4)
+            for i, direction in enumerate(current_directions):
+                with cols[i % 4]:
                     if st.button(f"❌ {direction}", 
                                key=f"remove_{teacher_id}_{direction}",
                                help=f"Удалить направление {direction}"):
-                        teacher["directions"].remove(direction)
-                        st.session_state.data['teachers'] = [
-                            t if t['id'] != teacher_id else teacher 
-                            for t in st.session_state.data['teachers']
-                        ]
-                        save_data(st.session_state.data)
-                        st.rerun()
+                        if direction in st.session_state[state_key]["added_directions"]:
+                            st.session_state[state_key]["added_directions"].remove(direction)
+                        else:
+                            st.session_state[state_key]["deleted_directions"].append(direction)
+                        st.session_state[state_key]["edited"] = True
+                        st.experimental_rerun()
         else:
             st.info("Нет назначенных направлений")
 
         # Добавление нового направления
         with st.form(f"add_dir_form_{teacher_id}"):
-            # Доступные направления (исключая уже добавленные)
             available_directions = [
                 d['name'] for d in st.session_state.data['directions'] 
-                if d['name'] not in teacher.get("directions", [])
+                if d['name'] not in current_directions
             ] + [
                 f"{s['parent']} ({s['name']})" 
                 for s in st.session_state.data.get('subdirections', [])
-                if f"{s['parent']} ({s['name']})" not in teacher.get("directions", [])
+                if f"{s['parent']} ({s['name']})" not in current_directions
             ]
 
-            if available_directions:
-                new_direction = st.selectbox(
-                    "Выберите направление для добавления", 
-                    available_directions,
-                    key=f"dir_select_{teacher_id}"
-                )
-                if st.form_submit_button("➕ Добавить направление"):
-                    teacher["directions"].append(new_direction)
-                    st.session_state.data['teachers'] = [
-                        t if t['id'] != teacher_id else teacher 
-                        for t in st.session_state.data['teachers']
-                    ]
-                    save_data(st.session_state.data)
-                    st.rerun()
-            else:
-                st.info("Все доступные направления уже добавлены")
-                st.form_submit_button(disabled=True)
+            new_direction = st.selectbox(
+                "Выберите направление для добавления", 
+                available_directions,
+                key=f"dir_select_{teacher_id}"
+            )
+            
+            if st.form_submit_button("➕ Добавить направление"):
+                st.session_state[state_key]["added_directions"].append(new_direction)
+                st.session_state[state_key]["edited"] = True
+                st.experimental_rerun()
+
+        # Кнопка сохранения изменений
+        if st.session_state[state_key]["edited"]:
+            if st.button("💾 Сохранить изменения", key=f"save_{teacher_id}"):
+                # Применяем изменения к основным данным
+                teacher["directions"] = [
+                    d for d in teacher["directions"] 
+                    if d not in st.session_state[state_key]["deleted_directions"]
+                ] + st.session_state[state_key]["added_directions"]
+                
+                # Обновляем данные
+                st.session_state.data['teachers'] = [
+                    t if t['id'] != teacher_id else teacher 
+                    for t in st.session_state.data['teachers']
+                ]
+                
+                save_data(st.session_state.data)
+                
+                # Сбрасываем состояние
+                st.session_state[state_key] = {
+                    "edited": False,
+                    "deleted_directions": [],
+                    "added_directions": []
+                }
+                
+                st.success("Изменения сохранены!")
+                time.sleep(1)
+                st.experimental_rerun()
 
 
         # Создаем карту соответствия поднаправлений к основным направлениям
