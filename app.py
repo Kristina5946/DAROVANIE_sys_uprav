@@ -1141,11 +1141,41 @@ def show_teacher_card(teacher_id):
         # 🎯 Направления преподавателя
         st.subheader("🎯 Управление направлениями")
         
-        # Актуальные направления с учетом изменений
-        current_directions = [
-            d for d in teacher["directions"] 
-            if d not in st.session_state[state_key]["deleted_directions"]
-        ] + st.session_state[state_key]["added_directions"]
+        # Получаем все доступные направления из данных
+        all_directions = set(
+            direction for teacher in st.session_state.data.get('teachers', []) 
+            for direction in teacher.get('directions', [])
+        )
+        
+        # Убираем уже добавленные направления
+        available_directions = sorted(list(all_directions - set(current_directions)))
+        
+        # Форма добавления существующего направления
+        with st.form(key=f"add_existing_direction_{teacher_id}"):
+            if available_directions:
+                selected_direction = st.selectbox(
+                    "Выберите существующее направление:",
+                    available_directions,
+                    key=f"select_dir_{teacher_id}"
+                )
+            else:
+                st.info("Все доступные направления уже добавлены")
+                selected_direction = None
+            
+            # Поле для добавления нового направления (если нужно)
+            new_direction = st.text_input("Или введите новое направление:", key=f"new_dir_{teacher_id}")
+            
+            if st.form_submit_button("➕ Добавить направление"):
+                if selected_direction:
+                    st.session_state[state_key]["added_directions"].append(selected_direction)
+                    st.session_state[state_key]["edited"] = True
+                    rerun()
+                elif new_direction and new_direction not in current_directions:
+                    st.session_state[state_key]["added_directions"].append(new_direction)
+                    st.session_state[state_key]["edited"] = True
+                    rerun()
+                elif new_direction in current_directions:
+                    st.warning("Это направление уже есть у преподавателя")
 
         # Отображаем текущие направления с компактными кнопками удаления
         if current_directions:
