@@ -265,7 +265,10 @@ class EducationCenterApp(QMainWindow):
             return
         
         try:
-            # Создаем словарь направление -> преподаватели
+            # Определение творческих направлений, которые требуют вычета за материалы
+            creative_directions = ['Гончарная мастерская с 5 лет', 'Студия живописи с 4 лет и с 6 лет','Студия живописи с 4 лет', 'Студия живописи с 6 лет', 'ДПИ']
+            
+            # Создаем словарь для маппинга направлений на преподавателей
             direction_to_teachers = {}
             for teacher in self.teachers_data:
                 for direction in teacher['directions']:
@@ -273,23 +276,31 @@ class EducationCenterApp(QMainWindow):
                         direction_to_teachers[direction] = []
                     direction_to_teachers[direction].append(teacher['name'])
             
-            # Создаем словарь для хранения зарплаты
-            teacher_salary = {}
+            # Создаем словарь для хранения общей суммы по каждому преподавателю
+            teacher_total_earnings = {}
             
-            # Обрабатываем платежи
+            # Обработка платежей из DataFrame
             for _, row in self.payments_data.iterrows():
                 direction = row['direction']
                 amount = float(row['amount'])
+                payment_type = row['type']
                 
+                # Применение вычета, если это творческое направление и абонемент
+                if direction in creative_directions and payment_type == 'Абонемент':
+                    amount_for_salary = amount - 600
+                else:
+                    amount_for_salary = amount
+                
+                # Добавление скорректированной суммы к заработку преподавателя
                 if direction in direction_to_teachers:
                     for teacher in direction_to_teachers[direction]:
-                        if teacher not in teacher_salary:
-                            teacher_salary[teacher] = 0.0
-                        teacher_salary[teacher] += amount
+                        if teacher not in teacher_total_earnings:
+                            teacher_total_earnings[teacher] = 0.0
+                        teacher_total_earnings[teacher] += amount_for_salary
             
-            # Формируем результаты
+            # Формирование результатов
             self.salary_results = []
-            for teacher, total in teacher_salary.items():
+            for teacher, total in teacher_total_earnings.items():
                 salary = total * 0.3
                 self.salary_results.append({
                     'Преподаватель': teacher,
@@ -297,10 +308,8 @@ class EducationCenterApp(QMainWindow):
                     'Зарплата (30%)': round(salary, 2)
                 })
             
-            # Сортируем по убыванию зарплаты
+            # Сортировка и отображение
             self.salary_results.sort(key=lambda x: x['Зарплата (30%)'], reverse=True)
-            
-            # Отображаем результаты
             self.show_results(self.salary_results)
             self.export_button.setEnabled(True)
             self.csv_text.append("Расчет зарплаты выполнен успешно")

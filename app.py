@@ -1124,7 +1124,46 @@ def show_teacher_card(teacher_id):
             st.write(f"🗓️ Принят: {teacher.get('hire_date', '')}")
 
         # 🎯 Направления преподавателя
-        st.subheader("🎯 Направления и посещения")
+        st.subheader("🎯 Управление направлениями")
+        
+        # Гарантируем, что directions — список
+        if not isinstance(teacher.get("directions"), list):
+            teacher["directions"] = [teacher["directions"]] if teacher.get("directions") else []
+
+        # Отображаем текущие направления с кнопкой удаления
+        for direction in teacher["directions"]:
+            with st.form(f"remove_dir_{teacher_id}_{direction}"):
+                if st.form_submit_button(f"❌ Убрать направление {direction}"):
+                    teacher["directions"].remove(direction)
+                    save_data(st.session_state.data)
+                    st.success(f"Направление {direction} удалено!")
+                    st.rerun()
+
+        # Добавление нового направления
+        available_directions = [
+            d['name'] for d in st.session_state.data['directions'] 
+            if d['name'] not in teacher.get("directions", [])
+        ] + [
+            f"{s['parent']} ({s['name']})" 
+            for s in st.session_state.data.get('subdirections', [])
+            if f"{s['parent']} ({s['name']})" not in teacher.get("directions", [])
+        ]
+
+        if available_directions:
+            with st.form(f"add_dir_{teacher_id}"):
+                new_direction = st.selectbox(
+                    "Добавить направление", 
+                    available_directions,
+                    key=f"dir_select_{teacher_id}"
+                )
+                if st.form_submit_button("Добавить"):
+                    teacher["directions"].append(new_direction)
+                    save_data(st.session_state.data)
+                    st.success(f"Добавлено направление {new_direction}!")
+                    st.rerun()
+        else:
+            st.info("Все доступные направления уже добавлены")
+
 
         # Создаем карту соответствия поднаправлений к основным направлениям
         direction_map = {
@@ -1575,71 +1614,39 @@ def show_teachers_page():
 
     # 📋 Таблица редактирования
     if teachers:
-        # Получаем только основные направления (без поднаправлений)
-        main_directions = [d['name'] for d in st.session_state.data['directions']]
-        
-        # Создаем словарь для связи основных направлений с их поднаправлениями
-        direction_hierarchy = defaultdict(list)
-        for sub in st.session_state.data.get('subdirections', []):
-            direction_hierarchy[sub['parent']].append(f"{sub['parent']} ({sub['name']})")
-
-        # Подготовка данных для таблицы
         df = pd.DataFrame(teachers)
-        
-        # Оставляем только основные направления для отображения
-        df['main_directions'] = df['directions'].apply(
-            lambda x: list(set(d for d in x if d in main_directions))
-        )
-        df['Удалить'] = False
+        df['directions'] = df['directions'].apply(lambda x: ', '.join(x))
+        df['id'] = df['id']
 
-        # Редактируемая таблица
         edited_df = st.data_editor(
-            df[['id', 'name', 'phone', 'email', 'main_directions', 'notes', 'Удалить']],
-            column_config={
-                "id": st.column_config.Column(disabled=True),
-                "main_directions": st.column_config.MultiSelectColumn(
-                    "Основные направления",
-                    options=main_directions,
-                    help="Выберите основные направления - поднаправления добавятся автоматически"
-                ),
-                "Удалить": st.column_config.CheckboxColumn("Удалить?")
-            },
+            df[['id', 'name', 'phone', 'email', 'directions', 'notes']],
             hide_index=True,
             use_container_width=True,
-            key="teachers_editor"
+            disabled=['id'],
         )
 
-        # Обработка сохранения
         if st.button("💾 Сохранить изменения"):
             for i, row in edited_df.iterrows():
                 for t in teachers:
                     if t['id'] == row['id']:
-                        # Собираем все направления: основные + их поднаправления
-                        directions = []
-                        for main_dir in row['main_directions']:
-                            directions.append(main_dir)
-                            directions.extend(direction_hierarchy.get(main_dir, []))
-                        
-                        t.update({
-                            'name': row['name'],
-                            'phone': row['phone'],
-                            'email': row['email'],
-                            'directions': list(set(directions)),  # Удаляем дубликаты
-                            'notes': row['notes']
-                        })
+                        t['name'] = row['name']
+                        t['phone'] = row['phone']
+                        t['email'] = row['email']
+                        t['notes'] = row['notes']
+                        # Важно: сохраняем направления как список
+                        t['directions'] = [d.strip() for d in row['directions'].split(',') if d.strip()]
                         break
             
-            # Обновляем расписание при изменении имен
+            # Обновляем расписание, если изменилось имя преподавателя
             for teacher in teachers:
-                old_name = next((t['name'] for t in st.session_state.data['teachers'] 
-                            if t['id'] == teacher['id']), None)
+                old_name = next((t['name'] for t in st.session_state.data['teachers'] if t['id'] == teacher['id']), None)
                 if old_name and old_name != teacher['name']:
                     for lesson in st.session_state.data['schedule']:
                         if lesson['teacher'] == old_name:
                             lesson['teacher'] = teacher['name']
             
             save_data(st.session_state.data)
-            st.success("Изменения сохранены! Поднаправления добавлены автоматически.")
+            st.success("Изменения сохранены!")
             st.rerun()
         # Создаем DataFrame с колонкой для удаления
         df = pd.DataFrame(teachers)
