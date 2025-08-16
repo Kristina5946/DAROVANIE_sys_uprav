@@ -1160,47 +1160,33 @@ def show_teacher_card(teacher_id):
                             st.session_state[state_key]["deleted_directions"].append(direction)
                         st.session_state[state_key]["edited"] = True
                         rerun()
-
-        # Форма добавления направлений
+        
+        # Получаем только основные направления из всех преподавателей (без поднаправлений)
+        all_main_directions = set()
+        for t in st.session_state.data.get('teachers', []):
+            for direction in t.get('directions', []):
+                # Проверяем, что это не поднаправление (формат "Основное (Поднаправление)")
+                if " (" not in direction:
+                    all_main_directions.add(direction)
+        
+        # Доступные для добавления направления (только основные, которых еще нет у преподавателя)
+        available_directions = sorted(list(all_main_directions - set(current_directions)))
+        
+        # Форма добавления существующего направления
         with st.form(key=f"add_direction_form_{teacher_id}"):
-            # Получаем все доступные направления из данных
-            all_directions = set()
-            for t in st.session_state.data.get('teachers', []):
-                for direction in t.get('directions', []):
-                    all_directions.add(direction)
-            
-            # Добавляем поднаправления, если они есть в данных
-            if 'subdirections' in st.session_state.data:
-                for subdir in st.session_state.data['subdirections']:
-                    all_directions.add(f"{subdir['parent']} ({subdir['name']})")
-            
-            # Доступные для добавления направления
-            available_directions = sorted(list(all_directions - set(current_directions)))
-            
             if available_directions:
                 selected_direction = st.selectbox(
                     "Выберите направление для добавления:",
                     available_directions,
                     key=f"select_dir_{teacher_id}"
                 )
-            else:
-                st.info("Все доступные направления уже добавлены")
-                selected_direction = None
-            
-            new_direction = st.text_input("Или введите новое направление:", key=f"new_dir_{teacher_id}")
-            
-            if st.form_submit_button("➕ Добавить направление"):
-                if selected_direction:
+                
+                if st.form_submit_button("➕ Добавить выбранное направление"):
                     st.session_state[state_key]["added_directions"].append(selected_direction)
                     st.session_state[state_key]["edited"] = True
                     rerun()
-                elif new_direction and new_direction not in current_directions:
-                    st.session_state[state_key]["added_directions"].append(new_direction)
-                    st.session_state[state_key]["edited"] = True
-                    rerun()
-                elif new_direction in current_directions:
-                    st.warning("Это направление уже есть у преподавателя")
-
+            else:
+                st.info("Все доступные направления уже добавлены")
         # Кнопка сохранения изменений
         if st.session_state[state_key]["edited"]:
             if st.button("💾 Сохранить изменения", key=f"save_{teacher_id}"):
