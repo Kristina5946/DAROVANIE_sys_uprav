@@ -1128,6 +1128,12 @@ def show_teacher_card(teacher_id):
             "added_directions": []
         }
 
+    # Текущие направления с учетом изменений
+    current_directions = [
+        d for d in teacher.get("directions", []) 
+        if d not in st.session_state[state_key]["deleted_directions"]
+    ] + st.session_state[state_key]["added_directions"]
+
     with st.expander(f"👩‍🏫 {teacher.get('name', 'Без имени')}", expanded=False):
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -1141,42 +1147,6 @@ def show_teacher_card(teacher_id):
         # 🎯 Направления преподавателя
         st.subheader("🎯 Управление направлениями")
         
-        # Получаем все доступные направления из данных
-        all_directions = set(
-            direction for teacher in st.session_state.data.get('teachers', []) 
-            for direction in teacher.get('directions', [])
-        )
-        
-        # Убираем уже добавленные направления
-        available_directions = sorted(list(all_directions - set(current_directions)))
-        
-        # Форма добавления существующего направления
-        with st.form(key=f"add_existing_direction_{teacher_id}"):
-            if available_directions:
-                selected_direction = st.selectbox(
-                    "Выберите существующее направление:",
-                    available_directions,
-                    key=f"select_dir_{teacher_id}"
-                )
-            else:
-                st.info("Все доступные направления уже добавлены")
-                selected_direction = None
-            
-            # Поле для добавления нового направления (если нужно)
-            new_direction = st.text_input("Или введите новое направление:", key=f"new_dir_{teacher_id}")
-            
-            if st.form_submit_button("➕ Добавить направление"):
-                if selected_direction:
-                    st.session_state[state_key]["added_directions"].append(selected_direction)
-                    st.session_state[state_key]["edited"] = True
-                    rerun()
-                elif new_direction and new_direction not in current_directions:
-                    st.session_state[state_key]["added_directions"].append(new_direction)
-                    st.session_state[state_key]["edited"] = True
-                    rerun()
-                elif new_direction in current_directions:
-                    st.warning("Это направление уже есть у преподавателя")
-
         # Отображаем текущие направления с компактными кнопками удаления
         if current_directions:
             st.write("Текущие направления:")
@@ -1191,11 +1161,40 @@ def show_teacher_card(teacher_id):
                         st.session_state[state_key]["edited"] = True
                         rerun()
 
-        # Форма добавления нового направления
+        # Форма добавления направлений
         with st.form(key=f"add_direction_form_{teacher_id}"):
-            new_direction = st.text_input("Добавить новое направление:", key=f"new_dir_{teacher_id}")
+            # Получаем все доступные направления из данных
+            all_directions = set()
+            for t in st.session_state.data.get('teachers', []):
+                for direction in t.get('directions', []):
+                    all_directions.add(direction)
+            
+            # Добавляем поднаправления, если они есть в данных
+            if 'subdirections' in st.session_state.data:
+                for subdir in st.session_state.data['subdirections']:
+                    all_directions.add(f"{subdir['parent']} ({subdir['name']})")
+            
+            # Доступные для добавления направления
+            available_directions = sorted(list(all_directions - set(current_directions)))
+            
+            if available_directions:
+                selected_direction = st.selectbox(
+                    "Выберите направление для добавления:",
+                    available_directions,
+                    key=f"select_dir_{teacher_id}"
+                )
+            else:
+                st.info("Все доступные направления уже добавлены")
+                selected_direction = None
+            
+            new_direction = st.text_input("Или введите новое направление:", key=f"new_dir_{teacher_id}")
+            
             if st.form_submit_button("➕ Добавить направление"):
-                if new_direction and new_direction not in current_directions:
+                if selected_direction:
+                    st.session_state[state_key]["added_directions"].append(selected_direction)
+                    st.session_state[state_key]["edited"] = True
+                    rerun()
+                elif new_direction and new_direction not in current_directions:
                     st.session_state[state_key]["added_directions"].append(new_direction)
                     st.session_state[state_key]["edited"] = True
                     rerun()
@@ -1207,7 +1206,7 @@ def show_teacher_card(teacher_id):
             if st.button("💾 Сохранить изменения", key=f"save_{teacher_id}"):
                 # Применяем изменения
                 teacher["directions"] = [
-                    d for d in teacher["directions"] 
+                    d for d in teacher.get("directions", []) 
                     if d not in st.session_state[state_key]["deleted_directions"]
                 ] + st.session_state[state_key]["added_directions"]
                 
@@ -1236,14 +1235,14 @@ def show_teacher_card(teacher_id):
             for s in st.session_state.data.get('subdirections', [])
         }
 
-        all_directions = set()
+        all_directions_stats = set()
         for dir_name in teacher.get('directions', []):
             if dir_name in direction_map:
-                all_directions.add(direction_map[dir_name])
+                all_directions_stats.add(direction_map[dir_name])
             else:
-                all_directions.add(dir_name)
+                all_directions_stats.add(dir_name)
 
-        for direction_name in sorted(all_directions):
+        for direction_name in sorted(all_directions_stats):
             st.markdown(f"### 📘 {direction_name}")
             
             lessons = []
@@ -1389,7 +1388,6 @@ def show_teacher_card(teacher_id):
                 )
             else:
                 st.info("Нет данных о посещениях.")
-
 
 def show_students_page():
     st.header("👦👧 Ученики и оплаты")
