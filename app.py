@@ -3121,7 +3121,7 @@ def show_reception_helper():
             col1, col2 = st.columns(2)
             with col1:
                 child_age = st.number_input("Возраст ребенка", min_value=0, max_value=30, value=5)
-                gender = st.selectbox("Пол ребенка", ["Мальчик", "Девочка", "Не важно"])
+                gender = st.selectbox("Пол ребенка", ["Не важно", "Девочка", "Мальчик"])
             with col2:
                 interests = st.multiselect(
                     "Интересы (опционально)",
