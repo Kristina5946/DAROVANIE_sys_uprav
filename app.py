@@ -1529,7 +1529,7 @@ def show_students_page():
             col1, col2 = st.columns(2)
             with col1:
                 amount = st.number_input("Сумма (₽)", min_value=0.0)
-                p_date = st.date_input("Дата", value=date.today())
+                p_date = st.date_input("Дата", value=date.today(), min_value=date(2008, 1, 1))
             with col2:
                 dir_options = [d['name'] for d in directions]
                 subdir_options = [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
@@ -3095,7 +3095,7 @@ def show_reception_helper():
         with st.form("child_info_form"):
             col1, col2 = st.columns(2)
             with col1:
-                child_age = st.number_input("Возраст ребенка", min_value=0, max_value=18, value=5)
+                child_age = st.number_input("Возраст ребенка", min_value=0, max_value=30, value=5)
                 gender = st.selectbox("Пол ребенка", ["Мальчик", "Девочка", "Не важно"])
             with col2:
                 interests = st.multiselect(
