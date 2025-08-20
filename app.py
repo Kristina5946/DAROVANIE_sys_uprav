@@ -1147,33 +1147,33 @@ def show_teacher_card(teacher_id):
         # 🎯 Направления преподавателя
         st.subheader("🎯 Управление направлениями")
         
-        # Отображаем текущие направления с компактными кнопками удаления
+        # Отображаем текущие направления с кнопками удаления
         if current_directions:
             st.write("Текущие направления:")
             cols = st.columns(4)
             for i, direction in enumerate(current_directions):
                 with cols[i % 4]:
-                    if st.button(f"❌ {direction}", key=f"remove_{teacher_id}_{direction}"):
+                    if st.button(f"❌ {direction}", key=f"remove_{teacher_id}_{direction}_{i}"):
                         if direction in st.session_state[state_key]["added_directions"]:
                             st.session_state[state_key]["added_directions"].remove(direction)
                         else:
                             st.session_state[state_key]["deleted_directions"].append(direction)
                         st.session_state[state_key]["edited"] = True
-                        rerun()
+                        st.rerun()
         
-        # Получаем только основные направления из всех преподавателей (без поднаправлений)
-        all_main_directions = set()
-        for t in st.session_state.data.get('teachers', []):
-            for direction in t.get('directions', []):
-                # Проверяем, что это не поднаправление (формат "Основное (Поднаправление)")
-                if " (" not in direction:
-                    all_main_directions.add(direction)
+        # Получаем ВСЕ доступные направления (основные + поднаправления)
+        all_available_directions = []
+        all_available_directions.extend([d['name'] for d in st.session_state.data['directions']])
+        all_available_directions.extend([
+            f"{s['parent']} ({s['name']})" 
+            for s in st.session_state.data.get('subdirections', [])
+        ])
         
-        # Доступные для добавления направления (только основные, которых еще нет у преподавателя)
-        available_directions = sorted(list(all_main_directions - set(current_directions)))
+        # Доступные для добавления направления (которых еще нет у преподавателя)
+        available_directions = sorted(list(set(all_available_directions) - set(current_directions)))
         
         # Форма добавления существующего направления
-        with st.form(key=f"add_direction_form_{teacher_id}"):
+        with st.form(key=f"add_direction_form_{teacher_id}", clear_on_submit=True):
             if available_directions:
                 selected_direction = st.selectbox(
                     "Выберите направление для добавления:",
@@ -1181,13 +1181,15 @@ def show_teacher_card(teacher_id):
                     key=f"select_dir_{teacher_id}"
                 )
                 
+                # ДОБАВЛЕНА КНОПКА SUBMIT
                 submitted = st.form_submit_button("➕ Добавить выбранное направление")
-                if submitted:
+                if submitted and selected_direction:
                     st.session_state[state_key]["added_directions"].append(selected_direction)
                     st.session_state[state_key]["edited"] = True
-                    rerun()
+                    st.rerun()
             else:
                 st.info("Все доступные направления уже добавлены")
+
         # Кнопка сохранения изменений
         if st.session_state[state_key]["edited"]:
             if st.button("💾 Сохранить изменения", key=f"save_{teacher_id}"):
@@ -1198,10 +1200,10 @@ def show_teacher_card(teacher_id):
                 ] + st.session_state[state_key]["added_directions"]
                 
                 # Обновляем данные
-                st.session_state.data['teachers'] = [
-                    t if t['id'] != teacher_id else teacher 
-                    for t in st.session_state.data['teachers']
-                ]
+                for i, t in enumerate(st.session_state.data['teachers']):
+                    if t['id'] == teacher_id:
+                        st.session_state.data['teachers'][i] = teacher
+                        break
                 
                 save_data(st.session_state.data)
                 
@@ -1214,7 +1216,7 @@ def show_teacher_card(teacher_id):
                 
                 st.success("Изменения сохранены!")
                 time.sleep(1)
-                rerun()
+                st.rerun()
 
         # Статистика и посещения
         direction_map = {
