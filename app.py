@@ -2032,7 +2032,36 @@ def show_schedule_page():
                 )
             }
         )
-
+        # Кнопка для сохранения изменений
+        if st.button("💾 Сохранить изменения расписания", key="save_schedule_changes"):
+            # Обновляем данные расписания
+            for i, row in edited_df.iterrows():
+                if i < len(schedule) and not row['Удалить']:
+                    # Обновляем существующие занятия
+                    schedule[i]['day'] = row['day']
+                    schedule[i]['start_time'] = row['start_time']
+                    schedule[i]['end_time'] = row['end_time']
+                    schedule[i]['teacher'] = row['teacher']
+                    schedule[i]['direction'] = row['direction']
+            
+            # Удаляем отмеченные занятия
+            rows_to_delete = edited_df[edited_df['Удалить']].index
+            if len(rows_to_delete) > 0:
+                for index in sorted(rows_to_delete, reverse=True):
+                    if index < len(schedule):
+                        lesson_id = schedule[index]['id']
+                        del schedule[index]
+                        
+                        # Также удаляем связанные посещения
+                        for date_key in list(attendance.keys()):
+                            if lesson_id in attendance[date_key]:
+                                del attendance[date_key][lesson_id]
+                            if not attendance[date_key]:
+                                del attendance[date_key]
+            
+            save_data(st.session_state.data)
+            st.success("Изменения в расписании сохранены!")
+            st.rerun()
         # Кнопка для удаления выбранных занятий
         if st.button("🗑️ Удалить выбранные занятия"):
             rows_to_delete = edited_df[edited_df['Удалить']].index
