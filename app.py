@@ -3120,8 +3120,21 @@ def show_reception_helper():
         with st.form("child_info_form"):
             col1, col2 = st.columns(2)
             with col1:
+                # Оставляем визуальный выбор возраста как есть
                 child_age = st.number_input("Возраст ребенка", min_value=0, max_value=30, value=5)
+                
+                # Но добавляем СКРЫТОЕ поле для даты рождения для точного расчета
+                child_dob = st.date_input(
+                    "Дата рождения ребенка*",
+                    value=date(date.today().year - child_age, 1, 1),  # Автоматически рассчитываем из возраста
+                    min_value=date(2000, 1, 1),
+                    max_value=date.today(),
+                    key="child_dob_hidden",
+                    label_visibility="collapsed"  # СКРЫВАЕМ поле, но оно будет работать
+                )
+                
                 gender = st.selectbox("Пол ребенка", ["Мальчик", "Девочка", "Не важно"])
+                
             with col2:
                 interests = st.multiselect(
                     "Интересы (опционально)",
@@ -3129,8 +3142,15 @@ def show_reception_helper():
                 )
             
             if st.form_submit_button("Подобрать направления"):
-                # Сначала фильтруем по возрасту и полу
-                suitable_directions = suggest_directions(child_age, gender if gender != "Не важно" else None)
+                # Используем ТОЧНЫЙ возраст из даты рождения
+                exact_age = calculate_age(child_dob)
+                
+                # Для отладки показываем реальный возраст
+                if exact_age != child_age:
+                    st.info(f"Уточненный возраст: {exact_age} лет (рассчитано из даты рождения)")
+                
+                # Используем обновленную функцию suggest_directions
+                suitable_directions = suggest_directions(exact_age, gender if gender != "Не важно" else None)
                 
                 # Если выбраны интересы, фильтруем по категориям
                 if interests:
