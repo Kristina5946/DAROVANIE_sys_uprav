@@ -1397,7 +1397,10 @@ def show_students_page():
             col1, col2 = st.columns(2)
             with col1:
                 name = st.text_input("ФИО*")
-                dob = st.date_input("Дата рождения*", value=date.today())
+                dob = st.date_input("Дата рождения*", 
+                       value=date.today(),
+                       min_value=date(2000, 1, 1),  # Минимальная дата - 2000 год
+                       max_value=date.today())      # Максимальная - сегодня
                 gender = st.selectbox("Пол", ["Мальчик", "Девочка"])
                 notes = st.text_area("Заметки")
             with col2:
