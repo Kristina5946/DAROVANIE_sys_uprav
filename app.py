@@ -408,9 +408,30 @@ def get_schedule_by_day(day):
     """Get schedule entries for a specific day."""
     return [s for s in st.session_state.data['schedule'] if s.get('day') == day]
 def refresh_data():
-    """Полностью перезагружает данные и очищает кэш"""
+    """Полностью перезагружает данные, очищает кэш и состояние UI."""
+    # Очищаем кэш функций, помеченных декоратором @st.cache_data
     st.cache_data.clear()
+
+    # Перезагружаем основные данные из источника (локальный файл или GitHub)
     st.session_state.data = load_data()
+
+    # Сбрасываем переменные состояния UI, которые могут содержать устаревшие ID или фильтры.
+    # Это предотвращает отображение закэшированных представлений.
+    keys_to_reset = [
+        'selected_teacher_id', 'edit_student_id', 'edit_direction_id', 
+        'edit_teacher_id', 'filter_direction', 'recurring_lesson_id',
+        'att_key' # Удаляем временные ключи от таблиц посещений
+    ]
+    
+    # Безопасно удаляем ключи, если они существуют
+    for key in list(st.session_state.keys()):
+        # Проверяем как точное совпадение, так и начало ключа (для динамических ключей)
+        if key in keys_to_reset or key.startswith('att_'):
+            del st.session_state[key]
+
+    st.success("Данные и кэш интерфейса были принудительно обновлены!")
+    
+    # Принудительно перезапускаем приложение, чтобы все изменения вступили в силу
     st.rerun()
 def calculate_age(birth_date):
     """Корректный расчёт возраста."""
@@ -2864,10 +2885,10 @@ def show_payments_report():
                             payment['type'] = row['type']
                             payment['notes'] = row['notes']
                             
-                            # --- НОВЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
+                             # --- ИЗМЕНЕННЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
                             if payment['type'] == "Абонемент":
                                 student_id = payment['student_id']
-                                p_date = row['date']
+                                p_date = row['date'] # Это уже объект date
                                 direction = payment['direction']
                                 
                                 for schedule_item in st.session_state.data['schedule']:
@@ -2876,20 +2897,19 @@ def show_payments_report():
                                         target_weekday = day_map.get(schedule_item['day'])
                                         
                                         if target_weekday is not None:
-                                            # Начинаем с первого дня месяца, в котором была оплата
                                             current_date = p_date.replace(day=1)
                                             # Перебираем все дни месяца
                                             while current_date.month == p_date.month:
+                                                # Проверяем, что день недели совпадает И дата >= даты оплаты
                                                 if current_date.weekday() == target_weekday and current_date >= p_date:
                                                     date_key = current_date.strftime("%Y-%m-%d")
                                                     lesson_id = schedule_item['id']
                                                     
-                                                    # Инициализируем структуру данных для посещений
                                                     st.session_state.data['attendance'].setdefault(date_key, {}).setdefault(lesson_id, {}).setdefault(student_id, {'present': False, 'note': 'Абонемент'})
                                                     st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = True
                                                 
                                                 current_date += timedelta(days=1)
-                                # --- КОНЕЦ НОВОГО БЛОКА ---
+                                # --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
                             break
             
             payments_to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
