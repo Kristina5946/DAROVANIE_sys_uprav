@@ -2853,6 +2853,12 @@ def show_payments_report():
     
     df_filtered['Удалить'] = False
     
+    # ---> ИЗМЕНЕНИЕ ЗДЕСЬ: Собираем список всех направлений для выпадающего списка
+    main_directions = [d['name'] for d in st.session_state.data['directions']]
+    sub_directions = [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
+    all_direction_options = sorted(list(set(main_directions + sub_directions)))
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
     st.subheader("Редактирование оплат")
     edited_df = st.data_editor(
         df_filtered[['id', 'student_id', 'student', 'date', 'amount', 'direction', 'type', 'notes', 'Удалить']],
@@ -2863,7 +2869,16 @@ def show_payments_report():
             "student_id": None, # Скрываем колонку
             "date": st.column_config.DateColumn("Дата", format="DD.MM.YYYY"),
             "amount": st.column_config.NumberColumn("Сумма", format="%.2f ₽"),
-            "direction": st.column_config.TextColumn("Направление"),
+            
+            # ---> ИЗМЕНЕНИЕ ЗДЕСЬ: TextColumn заменен на SelectboxColumn
+            "direction": st.column_config.SelectboxColumn(
+                "Направление",
+                help="Выберите направление из списка",
+                options=all_direction_options,
+                required=True
+            ),
+            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
             "type": st.column_config.SelectboxColumn("Тип оплаты", options=["Абонемент", "Разовое", "Пробное", "Другое"]),
             "notes": st.column_config.TextColumn("Примечание"),
             "Удалить": st.column_config.CheckboxColumn("Удалить?", default=False)
@@ -2885,7 +2900,6 @@ def show_payments_report():
                             payment['type'] = row['type']
                             payment['notes'] = row['notes']
                             
-                             # --- НОВЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
                             if payment['type'] == "Абонемент":
                                 student_id = payment['student_id']
                                 p_date = row['date']
@@ -2897,20 +2911,16 @@ def show_payments_report():
                                         target_weekday = day_map.get(schedule_item['day'])
                                         
                                         if target_weekday is not None:
-                                            # Начинаем с первого дня месяца, в котором была оплата
                                             current_date = p_date.replace(day=1)
-                                            # Перебираем все дни месяца
                                             while current_date.month == p_date.month:
                                                 if current_date.weekday() == target_weekday and current_date >= p_date:
                                                     date_key = current_date.strftime("%Y-%m-%d")
                                                     lesson_id = schedule_item['id']
                                                     
-                                                    # Инициализируем структуру данных для посещений
                                                     st.session_state.data['attendance'].setdefault(date_key, {}).setdefault(lesson_id, {}).setdefault(student_id, {'present': False, 'note': 'Абонемент'})
                                                     st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = True
                                                 
                                                 current_date += timedelta(days=1)
-                                # --- КОНЕЦ НОВОГО БЛОКА ---
                             break
             
             payments_to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
