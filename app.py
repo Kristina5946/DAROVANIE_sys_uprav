@@ -948,11 +948,9 @@ def show_student_card(student_id):
 
         st.subheader("🎯 Направления")
 
-        # Гарантируем, что directions — список
         if not isinstance(student.get("directions"), list):
             student["directions"] = [student["directions"]] if student.get("directions") else []
 
-        # Отображаем направления с кнопкой отписки
         for d in student["directions"]:
             with st.form(f"unassign_form_{student['id']}_{d}"):
                 if st.form_submit_button(f"❌ Отписать от {d}"):
@@ -961,7 +959,6 @@ def show_student_card(student_id):
                     st.success(f"Ученик отписан от {d}")
                     st.rerun()
 
-        # Добавление направления
         available = (
             [d['name'] for d in st.session_state.data['directions'] if d['name'] not in student["directions"]] +
             [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', []) 
@@ -977,16 +974,12 @@ def show_student_card(student_id):
                     st.success(f"Добавлено направление {new_dir}")
                     st.rerun()
 
-
         st.subheader("💳 Оплаты")
-        # Получаем все оплаты ученика + проверяем поднаправления
         payments = []
         for p in st.session_state.data['payments']:
             if p['student_id'] == student['id']:
-                # Проверяем прямое направление
                 if p['direction'] in student.get('directions', []):
                     payments.append(p)
-                # Проверяем поднаправления (формат "Основное направление (Имя ребенка)")
                 elif any(p['direction'] == f"{s['parent']} ({s['name']})" 
                         for s in st.session_state.data.get('subdirections', [])
                         if s['name'] == student['name']):
@@ -1003,20 +996,15 @@ def show_student_card(student_id):
 
         st.subheader("📅 Посещения")
         attendances = []
-
-        # Создаем карту соответствия поднаправлений к основным направлениям
         direction_map = {
             f"{s['parent']} ({s['name']})": s['parent'] 
             for s in st.session_state.data.get('subdirections', [])
         }
 
-        # Собираем данные о посещениях
         for day, lessons in st.session_state.data.get("attendance", {}).items():
             for lesson_id, students_data in lessons.items():
                 if student_id in students_data:
                     status = students_data[student_id]
-                    
-                    # Проверяем как регулярные занятия, так и разовые
                     lesson = next(
                         (l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) 
                         if l['id'] == lesson_id),
@@ -1025,10 +1013,7 @@ def show_student_card(student_id):
                     
                     if lesson:
                         direction_name = lesson['direction']
-                        # Преобразуем поднаправление в основное направление для отображения
                         direction_to_show = direction_map.get(direction_name, direction_name)
-                        
-                        # Определяем тип занятия
                         lesson_type = "Разовое" if 'date' in lesson else "Регулярное"
                         
                         attendances.append({
@@ -1037,16 +1022,15 @@ def show_student_card(student_id):
                             "Фактическое направление": direction_name,
                             "Преподаватель": lesson['teacher'],
                             "Тип": lesson_type,
-                            "Был": "Да" if status.get('present') else "Нет",
-                            "Оплачено": "Да" if status.get('paid') else "Нет",
+                            "Был": status.get('present', False),
+                            "Оплачено": status.get('paid', False),
                             "Примечание": status.get('note', '')
                         })
 
         if attendances:
             df_att = pd.DataFrame(attendances).sort_values("Дата", ascending=False)
-            df_att['Удалить'] = False  # Добавляем колонку для удаления
+            df_att['Удалить'] = False
             
-            # Отображаем основную таблицу (скрываем колонку удаления)
             st.dataframe(
                 df_att.drop(columns=['Удалить', 'Фактическое направление']),
                 use_container_width=True,
@@ -1058,7 +1042,6 @@ def show_student_card(student_id):
                 hide_index=True
             )
             
-            # Редактируемая таблица с колонкой удаления (в expander)
             with st.expander("✏️ Редактировать посещения", expanded=False):
                 edited_att = st.data_editor(
                     df_att,
@@ -1067,23 +1050,40 @@ def show_student_card(student_id):
                         "Удалить": st.column_config.CheckboxColumn("Удалить?", default=False),
                         "Дата": st.column_config.DateColumn(format="DD.MM.YYYY", disabled=True),
                         "Направление": st.column_config.TextColumn(disabled=True),
-                        "Тип": st.column_config.TextColumn(disabled=True)
+                        "Тип": st.column_config.TextColumn(disabled=True),
+                        "Был": st.column_config.CheckboxColumn("Посещение"),
+                        "Оплачено": st.column_config.CheckboxColumn("Оплата"),
                     },
                     hide_index=True,
                     key=f"att_editor_{student_id}"
                 )
                 
                 if st.button("💾 Сохранить изменения", key=f"save_att_{student_id}"):
+                    # --- НОВЫЙ БЛОК: ОБНОВЛЕНИЕ ДАННЫХ ---
+                    for _, row in edited_att.iterrows():
+                        if not row['Удалить']:
+                            date_key = row['Дата'].strftime("%Y-%m-%d") if hasattr(row['Дата'], 'strftime') else row['Дата']
+                            direction = row['Фактическое направление']
+                            
+                            # Находим и обновляем запись о посещении
+                            if date_key in st.session_state.data['attendance']:
+                                for lesson_id, students in st.session_state.data['attendance'][date_key].items():
+                                    if student_id in students:
+                                        lesson = next((l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) if l['id'] == lesson_id), None)
+                                        if lesson and lesson['direction'] == direction:
+                                            st.session_state.data['attendance'][date_key][lesson_id][student_id]['present'] = bool(row['Был'])
+                                            st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = bool(row['Оплачено'])
+                                            st.session_state.data['attendance'][date_key][lesson_id][student_id]['note'] = str(row['Примечание'])
+                    # --- КОНЕЦ НОВОГО БЛОКА ---
+
                     # Удаляем отмеченные посещения
                     to_delete = edited_att[edited_att['Удалить']]
-                    
                     for _, row in to_delete.iterrows():
                         date_key = row['Дата'].strftime("%Y-%m-%d") if hasattr(row['Дата'], 'strftime') else row['Дата']
                         direction = row['Фактическое направление']
                         
-                        # Находим и удаляем запись о посещении
                         if date_key in st.session_state.data['attendance']:
-                            for lesson_id in st.session_state.data['attendance'][date_key]:
+                            for lesson_id in list(st.session_state.data['attendance'][date_key].keys()):
                                 if student_id in st.session_state.data['attendance'][date_key][lesson_id]:
                                     lesson = next(
                                         (l for l in st.session_state.data['schedule'] + 
@@ -1102,7 +1102,6 @@ def show_student_card(student_id):
                     st.success("Изменения сохранены!")
                     st.rerun()
             
-            # Добавляем возможность посмотреть детали
             with st.expander("🔍 Детализация по поднаправлениям"):
                 st.dataframe(
                     df_att,
@@ -1117,8 +1116,6 @@ def show_student_card(student_id):
                 )
         else:
             st.info("Нет посещений.")
-
-
 
 
 def show_teacher_card(teacher_id):
@@ -2785,15 +2782,12 @@ def show_payments_report():
         st.info("Нет данных по оплатам.")
         return
     
-    # Создаем DataFrame с оплатами
     df_payments = pd.DataFrame(st.session_state.data['payments'])
     
-    # Преобразуем даты и добавляем имена учеников
     df_payments['date'] = pd.to_datetime(df_payments['date'])
     student_id_to_name = {s['id']: s['name'] for s in st.session_state.data['students']}
     df_payments['student'] = df_payments['student_id'].map(student_id_to_name)
     
-    # Фильтры
     with st.expander("🔍 Фильтры", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -2821,7 +2815,6 @@ def show_payments_report():
             key="payments_type_filter"
         )
     
-    # Применяем фильтры
     df_filtered = df_payments[
         (df_payments['date'].dt.date >= start_date) & 
         (df_payments['date'].dt.date <= end_date)
@@ -2837,49 +2830,25 @@ def show_payments_report():
         st.info("Нет данных по оплатам за выбранный период.")
         return
     
-    # Добавляем колонку для удаления
     df_filtered['Удалить'] = False
     
-    # Отображаем редактируемую таблицу
     st.subheader("Редактирование оплат")
     edited_df = st.data_editor(
-        df_filtered[['id', 'student', 'date', 'amount', 'direction', 'type', 'notes', 'Удалить']],
+        df_filtered[['id', 'student_id', 'student', 'date', 'amount', 'direction', 'type', 'notes', 'Удалить']],
         use_container_width=True,
         hide_index=True,
         disabled=['id', 'student'],
         column_config={
-            "date": st.column_config.DateColumn(
-                "Дата",
-                format="DD.MM.YYYY",
-                help="Дата оплаты"
-            ),
-            "amount": st.column_config.NumberColumn(
-                "Сумма",
-                format="%.2f ₽",
-                help="Сумма оплаты"
-            ),
-            "direction": st.column_config.TextColumn(
-                "Направление",
-                help="Направление занятия"
-            ),
-            "type": st.column_config.SelectboxColumn(
-                "Тип оплаты",
-                help="Тип оплаты",
-                options=["Абонемент", "Разовое", "Пробное", "Другое"]
-            ),
-            "notes": st.column_config.TextColumn(
-                "Примечание",
-                help="Дополнительная информация"
-            ),
-            "Удалить": st.column_config.CheckboxColumn(
-                "Удалить?",
-                help="Отметьте для удаления",
-                default=False
-            )
+            "student_id": None, # Скрываем колонку
+            "date": st.column_config.DateColumn("Дата", format="DD.MM.YYYY"),
+            "amount": st.column_config.NumberColumn("Сумма", format="%.2f ₽"),
+            "direction": st.column_config.TextColumn("Направление"),
+            "type": st.column_config.SelectboxColumn("Тип оплаты", options=["Абонемент", "Разовое", "Пробное", "Другое"]),
+            "notes": st.column_config.TextColumn("Примечание"),
+            "Удалить": st.column_config.CheckboxColumn("Удалить?", default=False)
         }
     )
     
-    # Кнопки действий
     col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("💾 Сохранить изменения", key="save_payments_changes"):
@@ -2894,17 +2863,40 @@ def show_payments_report():
                             payment['direction'] = row['direction']
                             payment['type'] = row['type']
                             payment['notes'] = row['notes']
+                            
+                            # --- НОВЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
+                            if payment['type'] == "Абонемент":
+                                student_id = payment['student_id']
+                                p_date = row['date']
+                                direction = payment['direction']
+                                
+                                for schedule_item in st.session_state.data['schedule']:
+                                    if schedule_item['direction'] == direction:
+                                        day_map = {"Понедельник": 0, "Вторник": 1, "Среда": 2, "Четверг": 3, "Пятница": 4, "Суббота": 5, "Воскресенье": 6}
+                                        target_weekday = day_map.get(schedule_item['day'])
+                                        
+                                        if target_weekday is not None:
+                                            # Начинаем с первого дня месяца, в котором была оплата
+                                            current_date = p_date.replace(day=1)
+                                            # Перебираем все дни месяца
+                                            while current_date.month == p_date.month:
+                                                if current_date.weekday() == target_weekday and current_date >= p_date:
+                                                    date_key = current_date.strftime("%Y-%m-%d")
+                                                    lesson_id = schedule_item['id']
+                                                    
+                                                    # Инициализируем структуру данных для посещений
+                                                    st.session_state.data['attendance'].setdefault(date_key, {}).setdefault(lesson_id, {}).setdefault(student_id, {'present': False, 'note': 'Абонемент'})
+                                                    st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = True
+                                                
+                                                current_date += timedelta(days=1)
+                                # --- КОНЕЦ НОВОГО БЛОКА ---
                             break
             
-            # Удаляем отмеченные платежи
             payments_to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
-            st.session_state.data['payments'] = [
-                p for p in st.session_state.data['payments']
-                if p['id'] not in payments_to_delete
-            ]
+            st.session_state.data['payments'] = [p for p in st.session_state.data['payments'] if p['id'] not in payments_to_delete]
             
             save_data(st.session_state.data)
-            st.success("Изменения сохранены!")
+            st.success("Изменения сохранены и синхронизированы!")
             st.rerun()
     
     with col2:
