@@ -2885,10 +2885,10 @@ def show_payments_report():
                             payment['type'] = row['type']
                             payment['notes'] = row['notes']
                             
-                             # --- ИЗМЕНЕННЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
+                             # --- НОВЫЙ БЛОК: СИНХРОНИЗАЦИЯ С ПОСЕЩЕНИЯМИ ---
                             if payment['type'] == "Абонемент":
                                 student_id = payment['student_id']
-                                p_date = row['date'] # Это уже объект date
+                                p_date = row['date']
                                 direction = payment['direction']
                                 
                                 for schedule_item in st.session_state.data['schedule']:
@@ -2897,19 +2897,20 @@ def show_payments_report():
                                         target_weekday = day_map.get(schedule_item['day'])
                                         
                                         if target_weekday is not None:
+                                            # Начинаем с первого дня месяца, в котором была оплата
                                             current_date = p_date.replace(day=1)
                                             # Перебираем все дни месяца
                                             while current_date.month == p_date.month:
-                                                # Проверяем, что день недели совпадает И дата >= даты оплаты
                                                 if current_date.weekday() == target_weekday and current_date >= p_date:
                                                     date_key = current_date.strftime("%Y-%m-%d")
                                                     lesson_id = schedule_item['id']
                                                     
+                                                    # Инициализируем структуру данных для посещений
                                                     st.session_state.data['attendance'].setdefault(date_key, {}).setdefault(lesson_id, {}).setdefault(student_id, {'present': False, 'note': 'Абонемент'})
                                                     st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = True
                                                 
                                                 current_date += timedelta(days=1)
-                                # --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
+                                # --- КОНЕЦ НОВОГО БЛОКА ---
                             break
             
             payments_to_delete = edited_df[edited_df['Удалить']]['id'].tolist()
