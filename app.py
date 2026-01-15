@@ -13,6 +13,7 @@ from io import StringIO
 import base64
 from urllib.parse import quote
 import requests
+import calendar
 
 # Конфигурация (используйте секреты Streamlit!)
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
@@ -115,6 +116,37 @@ def load_data():
     # 3. Возвращаем начальные данные, если ничего не загрузилось
     st.warning("Используются начальные данные")
     return initial_data.copy()
+
+# --- AUDIT LOGGING SYSTEM ---
+LOG_FILE = 'audit_log.csv'
+
+def log_action(user, action, details):
+    """Log user actions to a CSV file to save memory."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_exists = os.path.exists(LOG_FILE)
+    
+    try:
+        with open(LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['Timestamp', 'User', 'Action', 'Details'])
+            writer.writerow([timestamp, user, action, details])
+    except Exception as e:
+        print(f"Logging error: {e}")
+
+def show_audit_log_page():
+    """Display the audit log."""
+    st.header("🕵️ История действий")
+    if os.path.exists(LOG_FILE):
+        df = pd.read_csv(LOG_FILE)
+        df = df.sort_values('Timestamp', ascending=False)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        if st.session_state.role == 'admin':
+            if st.button("🗑️ Очистить историю"):
+                os.remove(LOG_FILE)
+                st.rerun()
+    else:
+        st.info("История действий пуста.")
 
 def github_headers():
     """Возвращает заголовки для GitHub API"""
@@ -251,6 +283,10 @@ if 'data' not in st.session_state:
         if key not in st.session_state.data:
             st.session_state.data[key] = default_value
 
+# Ensure schedule_exceptions exists
+if 'schedule_exceptions' not in st.session_state.data:
+    st.session_state.data['schedule_exceptions'] = {}
+
 session_vars = {
     'page': 'login',
     'authenticated': False,
@@ -272,6 +308,137 @@ for var, default in session_vars.items():
     if var not in st.session_state:
         st.session_state[var] = default
 
+
+# --- НОВЫЕ ФУНКЦИИ ЛОГИКИ ---
+
+# --- БЛОК КОНТРОЛЯ И ЛОГОВ (Вставить после импортов) ---
+import csv
+
+LOG_FILE = 'audit_log.csv'
+
+def log_action(user, action, details):
+    """Записывает действие в файл, не нагружая память"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Если файла нет, создаем заголовок
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Время', 'Пользователь', 'Действие', 'Детали'])
+            
+    # Дописываем строку
+    try:
+        with open(LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([timestamp, user, action, details])
+    except Exception as e:
+        print(f"Ошибка лога: {e}")
+
+def show_audit_log_page():
+    """Страница просмотра истории"""
+    st.title("🕵️ История действий администраторов")
+    
+    if not os.path.exists(LOG_FILE):
+        st.info("История действий пока пуста.")
+        return
+
+    # Читаем файл
+    try:
+        df = pd.read_csv(LOG_FILE)
+        # Сортируем: новые сверху
+        df = df.sort_values(by="Время", ascending=False)
+        
+        # Фильтры для удобства
+        col1, col2 = st.columns(2)
+        with col1:
+            user_filter = st.multiselect("Фильтр по админу", options=df['Пользователь'].unique())
+        with col2:
+            action_filter = st.multiselect("Фильтр по действию", options=df['Действие'].unique())
+            
+        if user_filter:
+            df = df[df['Пользователь'].isin(user_filter)]
+        if action_filter:
+            df = df[df['Действие'].isin(action_filter)]
+            
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        st.download_button(
+            label="📥 Скачать историю (CSV)",
+            data=df.to_csv(index=False).encode('utf-8'),
+            file_name='audit_log.csv',
+            mime='text/csv',
+        )
+        
+        # Кнопка очистки (только для главного)
+        if st.session_state.username == 'admin':
+            if st.button("🗑 Очистить историю (Осторожно!)"):
+                os.remove(LOG_FILE)
+                st.rerun()
+                
+    except Exception as e:
+        st.error(f"Ошибка чтения логов: {e}")
+
+# 1. Логирование (Простой вариант без лишней памяти)
+LOG_FILE = 'audit_log.csv'
+def log_action(user, action, details):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow([timestamp, user, action, details])
+
+# 2. Умный расчет стоимости и уроков в месяце
+def get_month_lessons(direction_name, year, month):
+    """Считает даты занятий в конкретном месяце по расписанию"""
+    lessons_dates = []
+    # Находим дни недели, когда идет это направление (0=Пн, 6=Вс)
+    target_days = set()
+    for l in st.session_state.data['schedule']:
+        if l['direction'] == direction_name:
+            # Преобразуем русские дни в цифры
+            days_map = {'Понедельник':0, 'Вторник':1, 'Среда':2, 'Четверг':3, 'Пятница':4, 'Суббота':5, 'Воскресенье':6}
+            if l['day'] in days_map:
+                target_days.add(days_map[l['day']])
+    
+    if not target_days:
+        return []
+
+    # Перебираем все дни месяца
+    import calendar
+    num_days = calendar.monthrange(year, month)[1]
+    for day in range(1, num_days + 1):
+        date_obj = date(year, month, day)
+        if date_obj.weekday() in target_days:
+            lessons_dates.append(date_obj)
+    return lessons_dates
+
+# 3. Определение реального учителя (с учетом замен)
+def get_teacher_for_lesson(lesson_id, lesson_date_str):
+    """Возвращает ID учителя: либо основного, либо заменяющего"""
+    # Проверяем исключения (замены)
+    exceptions = st.session_state.data.get('schedule_exceptions', {})
+    if lesson_date_str in exceptions and lesson_id in exceptions[lesson_date_str]:
+        exc = exceptions[lesson_date_str][lesson_id]
+        if exc['type'] == 'substitution':
+            return exc['teacher_id']
+        if exc['type'] == 'cancel':
+            return None # Урок отменен
+            
+    # Если замен нет, ищем основного в расписании
+    for l in st.session_state.data['schedule']:
+        if l['id'] == lesson_id:
+            return l['teacher_id']
+    return None
+
+# 4. Финансы: Получение цены одного занятия
+def get_lesson_price(direction_name):
+    for d in st.session_state.data['directions']:
+        if d['name'] == direction_name:
+            # Считаем, что в абонементе в среднем 8 занятий
+            # Или можно сделать точнее: делить на кол-во занятий в текущем месяце
+            return d['cost'] / 8 
+    return 0
+
+
 # --- Authentication Functions ---
 def login(username, password):
     """Проверяет логин/пароль"""
@@ -283,6 +450,7 @@ def login(username, password):
             "role": users[username]["role"],
             "teacher_id": users[username]["teacher_id"]
         })
+        log_action(username, "Login", "User logged in")
         st.success(f"Добро пожаловать, {username}!")
         st.rerun()
     else:
@@ -320,6 +488,7 @@ def logout():
     st.session_state.username = None
     st.session_state.role = None
     st.cache_data.clear()
+    log_action(st.session_state.username, "Logout", "User logged out")
     st.session_state.page = 'login'
     st.info("Вы вышли из системы.")
     st.rerun()
@@ -719,6 +888,7 @@ def show_home_page():
                 
                 st.session_state.data["news"].insert(0, news_data)
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Add News", f"Added news: {news_id}")
                 st.success("Новость добавлена!")
                 st.rerun()
     
@@ -750,6 +920,7 @@ def show_home_page():
                         if os.path.exists(media_path):
                             os.remove(media_path)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Delete News", f"Deleted news: {news['id']}")
                     st.success("Новость удалена!")
                     st.rerun()
     else:
@@ -789,6 +960,7 @@ def show_directions_page():
                     }
                     directions.append(new_direction)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Direction", f"Added: {name}")
                     st.success(f"Направление '{name}' добавлено.")
                     st.rerun()
                 else:
@@ -856,6 +1028,7 @@ def show_directions_page():
                             except Exception:
                                 pass
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Edit Directions", "Updated directions table")
                 st.success("Изменения сохранены.")
                 st.rerun()
         else:
@@ -914,6 +1087,7 @@ def show_directions_page():
                     }
                     subdirections.append(new_sub)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Subdirection", f"{sub_name} to {parent_dir}")
                     st.success("Поднаправление добавлено!")
                     st.rerun()
                 else:
@@ -951,7 +1125,350 @@ def show_directions_page():
             st.rerun()
     else:
         st.info("Нет поднаправлений")
+def show_financial_control_page():
+    st.title("💰 Управление Оплатами и Абонементами")
+    
+    tabs = st.tabs(["📊 Сетка Абонементов", "🔄 Переносы и Замены", "🗂 История операций"])
 
+    # --- ТАБ 1: Визуальная сетка (как просила, с квадратиками) ---
+    with tabs[0]:
+        st.subheader("Состояние абонементов на текущий месяц")
+        
+        # Фильтр по направлению
+        all_dirs = [d['name'] for d in st.session_state.data['directions']]
+        selected_dir = st.selectbox("Фильтр по направлению:", ["Все"] + all_dirs)
+        
+        current_year = date.today().year
+        current_month = date.today().month
+        
+        # Проходим по ученикам
+        for s in st.session_state.data['students']:
+            # Фильтр направлений ученика
+            student_dirs = s['directions']
+            if selected_dir != "Все":
+                if selected_dir not in student_dirs:
+                    continue
+                student_dirs = [selected_dir] # Показываем только выбранное
+
+            if not student_dirs: continue
+
+            with st.container(border=True):
+                st.markdown(f"**👤 {s['name']}**")
+                
+                for d_name in student_dirs:
+                    st.write(f"*{d_name}*")
+                    # Получаем все даты занятий в этом месяце
+                    dates = get_month_lessons(d_name, current_year, current_month)
+                    
+                    # Рисуем "квадратики"
+                    cols = st.columns(len(dates) if dates else 1)
+                    
+                    attended_count = 0
+                    for i, d_date in enumerate(dates):
+                        d_str = d_date.strftime("%Y-%m-%d")
+                        status = "future" # future, present, sick, skip
+                        
+                        # Проверяем посещаемость
+                        # (Тут упрощенный поиск, в реальности надо перебрать уроки этого дня)
+                        attendance_day = st.session_state.data.get('attendance', {}).get(d_str, {})
+                        is_present = False
+                        is_sick = False
+                        
+                        # Ищем, был ли ученик на любом уроке этого направления в этот день
+                        for l_id, students_in_l in attendance_day.items():
+                             # Надо проверить, относится ли урок к направлению (нужен маппинг)
+                             # Для скорости просто ищем запись
+                             if s['id'] in students_in_l:
+                                # Проверяем, относится ли урок к текущему направлению
+                                lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
+                                if not lesson_info:
+                                    lesson_info = next((l for l in st.session_state.data.get('single_lessons', []) if l['id'] == l_id), None)
+                                
+                                if lesson_info and lesson_info.get('direction') == d_name and s['id'] in students_in_l:
+                                    record = students_in_l[s['id']]
+                                    if record.get('present'):
+                                        is_present = True
+                                    elif 'болел' in str(record.get('note', '')).lower():
+                                        is_sick = True
+                        
+                        # Визуализация квадратика
+                        color = "gray" # Будущее
+                        if d_date < date.today(): color = "#ffcccb" # Прогул (красный)
+                        if is_present: 
+                            color = "#90ee90" # Был (зеленый)
+                            attended_count += 1
+                        if is_sick: color = "#ffd700" # Болел (желтый)
+                        
+                        if i < len(cols):
+                            cols[i].markdown(f"""
+                                <div style="background-color: {color}; padding: 5px; text-align: center; border-radius: 4px; font-size: 0.8em;">
+                                {d_date.day}
+                                </div>
+                                """, unsafe_allow_html=True)
+                    
+                    # Полоска прогресса и сумма
+                    total = len(dates)
+                    
+                    if total > 0:
+                        st.progress(attended_count / total)
+                        
+                        # Считаем оплаты за текущий месяц
+                        total_paid = 0
+                        for p in st.session_state.data['payments']:
+                            if p['student_id'] == s['id'] and p['direction'] == d_name:
+                                try:
+                                    p_date = datetime.strptime(p['date'], "%Y-%m-%d").date()
+                                    if p_date.year == current_year and p_date.month == current_month:
+                                        total_paid += p['amount']
+                                except:
+                                    pass
+                        
+                        # Расчет использованных средств на основе ОПЛАЧЕННОГО
+                        cost_per_lesson_paid = total_paid / total if total > 0 else 0
+                        used = attended_count * cost_per_lesson_paid
+                        
+                        balance = total_paid - used
+                        st.caption(f"Оплачено: {total_paid:.0f} ₽ | Использовано: {used:.0f} ₽ | Остаток: {balance:.0f} ₽ (Посещено {attended_count}/{total})")
+
+    # --- ТАБ 2: Замены преподавателей и Перерасчет ---
+    with tabs[1]:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("👨‍🏫 Замена преподавателя")
+            sub_date = st.date_input("Дата замены")
+            sub_date_str = sub_date.strftime("%Y-%m-%d")
+            
+            # Найти уроки в этот день
+            day_name_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"][sub_date.weekday()]
+            lessons_today = [l for l in st.session_state.data['schedule'] if l['day'] == day_name_ru]
+            
+            if lessons_today:
+                l_options = {l['id']: f"{l['start_time']} - {l['direction']} ({l['teacher']})" for l in lessons_today}
+                selected_l_id = st.selectbox("Выберите занятие", list(l_options.keys()), format_func=lambda x: l_options[x])
+                
+                new_teacher = st.selectbox("Кто заменяет?", [t['name'] for t in st.session_state.data['teachers']])
+                new_teacher_id = next(t['id'] for t in st.session_state.data['teachers'] if t['name'] == new_teacher)
+                
+                if st.button("Сохранить замену"):
+                    if 'schedule_exceptions' not in st.session_state.data:
+                        st.session_state.data['schedule_exceptions'] = {}
+                    if sub_date_str not in st.session_state.data['schedule_exceptions']:
+                        st.session_state.data['schedule_exceptions'][sub_date_str] = {}
+                    
+                    st.session_state.data['schedule_exceptions'][sub_date_str][selected_l_id] = {
+                        "type": "substitution",
+                        "teacher_id": new_teacher_id,
+                        "orig_teacher_name": l_options[selected_l_id]
+                    }
+                    save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Замена учителя", f"{sub_date_str}: {new_teacher}")
+                    st.success("Замена сохранена! Зарплата посчитается новому учителю.")
+            else:
+                st.warning("В этот день нет занятий по расписанию.")
+
+        with col2:
+            st.subheader("🔄 Перенос средств (Болезнь/Отработка)")
+            st.info("Используйте это, если ребенок проболел и нужно перекинуть деньги на след. месяц или другое направление.")
+            st.subheader("🔄 Перенос средств и Отработка")
+            st.info("Перенос оплаты с одного направления на другое или на следующий месяц.")
+            
+            p_student_name = st.selectbox("Ученик", [s['name'] for s in st.session_state.data['students']])
+            p_student = None
+            if p_student_name:
+                p_student = next((s for s in st.session_state.data['students'] if s['name'] == p_student_name), None)
+            
+            if not p_student:
+                st.warning("Выберите ученика")
+                st.stop()
+            
+            # Выбор источника средств
+            source_dir = st.selectbox("С какого направления списать?", p_student.get('directions', []))
+            
+            # Выбор цели
+            target_type = st.radio("Куда перенести?", ["На следующий месяц (то же направление)", "На другое направление (Отработка)"])
+            
+            target_dir = source_dir
+            target_date_start = date.today()
+            create_lesson = False
+            target_date_obj = None
+            
+            if target_type == "На следующий месяц (то же направление)":
+                # Вычисляем первое число следующего месяца
+                if date.today().month == 12:
+                    target_date_start = date(date.today().year + 1, 1, 1)
+                else:
+                    target_date_start = date(date.today().year, date.today().month + 1, 1)
+            elif target_type == "На другое направление (Отработка)":
+                all_dirs = [d['name'] for d in st.session_state.data['directions']]
+                target_dir = st.selectbox("Выберите направление для зачисления", all_dirs)
+                create_lesson = True
+                target_date_obj = st.date_input("Дата занятия для отработки", min_value=date.today())
+            
+            amount = st.number_input("Сумма к переносу (руб)", min_value=0, step=100)
+            reason = st.text_input("Причина (напр. Болезнь)", value="Перенос занятий")
+            
+            if st.button("Выполнить перенос"):
+                # 1. Списание с текущего
+                debit_payment = {
+                    "id": str(uuid.uuid4()),
+                    "student_id": p_student['id'],
+                    "date": str(date.today()),
+                    "amount": -amount,
+                    "direction": source_dir,
+                    "type": "Перенос (списание)",
+                    "notes": f"{reason} -> {target_dir} ({target_type})"
+                }
+                st.session_state.data['payments'].append(debit_payment)
+                
+                # 2. Зачисление на новое
+                credit_payment = {
+                    "id": str(uuid.uuid4()),
+                    "student_id": p_student['id'],
+                    "date": str(target_date_start),
+                    "amount": amount,
+                    "direction": target_dir,
+                    "type": "Перенос (зачисление)",
+                    "notes": f"Из {source_dir}: {reason}"
+                }
+                st.session_state.data['payments'].append(credit_payment)
+                
+                # 3. Если перенос на другое направление - создаем запись на занятие (отработку)
+                if create_lesson and target_date_obj:
+                    # Ищем преподавателя для этого направления в этот день
+                    day_name = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"][target_date_obj.weekday()]
+                    
+                    # Пытаемся найти регулярное занятие
+                    target_teacher_name = "Не назначен"
+                    target_teacher_id = None
+                    
+                    found_lesson = next((l for l in st.session_state.data['schedule'] if l['direction'] == target_dir and l['day'] == day_name), None)
+                    if found_lesson:
+                        target_teacher_name = found_lesson['teacher']
+                        # Находим ID учителя
+                        t_obj = next((t for t in st.session_state.data['teachers'] if t['name'] == target_teacher_name), None)
+                        if t_obj: target_teacher_id = t_obj['id']
+
+                    new_single_lesson = {
+                        'id': str(uuid.uuid4()),
+                        'student_id': p_student['id'],
+                        'direction': target_dir,
+                        'teacher': target_teacher_name,
+                        'teacher_id': target_teacher_id,
+                        'date': str(target_date_obj),
+                        'start_time': found_lesson['start_time'] if found_lesson else "00:00",
+                        'end_time': found_lesson['end_time'] if found_lesson else "00:00",
+                        'type': 'makeup', # Отработка
+                        'notes': f"Отработка: {reason}",
+                        'cost': amount # Сохраняем сумму переноса для учителя
+                    }
+                    st.session_state.data.setdefault('single_lessons', []).append(new_single_lesson)
+                    
+                    # Автоматически создаем запись в посещаемости с оплатой (галочка оплачено)
+                    date_key = str(target_date_obj)
+                    if date_key not in st.session_state.data['attendance']:
+                        st.session_state.data['attendance'][date_key] = {}
+                    
+                    if new_single_lesson['id'] not in st.session_state.data['attendance'][date_key]:
+                         st.session_state.data['attendance'][date_key][new_single_lesson['id']] = {}
+
+                    st.session_state.data['attendance'][date_key][new_single_lesson['id']][p_student['id']] = {
+                        'present': False, 
+                        'paid': True,     # Оплачено переносом
+                        'note': f"Перенос: {reason}"
+                    }
+
+                save_data(st.session_state.data)
+                log_action(st.session_state.username, "Перенос средств", f"{p_student_name}: +{amount} ({reason})")
+                st.success(f"Баланс обновлен! Текущий: {p_student['balance']}")
+                log_action(st.session_state.username, "Перенос средств", f"{p_student_name}: {amount}р {source_dir}->{target_dir}")
+                st.success(f"Перенос выполнен! Списано с '{source_dir}', зачислено на '{target_dir}' ({target_date_start})")
+
+    # --- ТАБ 3: История операций ---
+    with tabs[2]:
+        st.subheader("📜 История операций (Замены, Отработки, Переносы)")
+        
+        history_data = []
+        
+        # 1. Замены
+        exceptions = st.session_state.data.get('schedule_exceptions', {})
+        for date_str, lessons in exceptions.items():
+            for l_id, exc in lessons.items():
+                if exc.get('type') == 'substitution':
+                    teacher_name = next((t['name'] for t in st.session_state.data['teachers'] if t['id'] == exc['teacher_id']), "Неизвестно")
+                    history_data.append({
+                        "id": l_id,
+                        "source": "substitution",
+                        "date_key": date_str,
+                        "Дата": date_str,
+                        "Тип": "Замена преподавателя",
+                        "Описание": f"{exc.get('orig_teacher_name')} -> {teacher_name}",
+                        "Сумма": "Расчет ЗП"
+                    })
+
+        # 2. Отработки / Разовые (Single Lessons)
+        for sl in st.session_state.data.get('single_lessons', []):
+            student_name = next((s['name'] for s in st.session_state.data['students'] if s['id'] == sl['student_id']), "Неизвестный")
+            history_data.append({
+                "id": sl['id'],
+                "source": "single_lesson",
+                "date_key": sl['date'],
+                "Дата": sl['date'],
+                "Тип": "Отработка/Разовое",
+                "Описание": f"{student_name} ({sl['direction']}) к {sl['teacher']}",
+                "Сумма": "По тарифу"
+            })
+
+        # 3. Переносы (Payments)
+        for p in st.session_state.data.get('payments', []):
+            if "Перенос" in p.get('type', '') or "Перенос" in str(p.get('notes', '')):
+                student_name = next((s['name'] for s in st.session_state.data['students'] if s['id'] == p['student_id']), "Неизвестный")
+                history_data.append({
+                    "id": p['id'],
+                    "source": "payment",
+                    "date_key": p['date'],
+                    "Дата": p['date'],
+                    "Тип": f"Финансы ({p.get('type')})",
+                    "Описание": f"{student_name}: {p.get('notes')}",
+                    "Сумма": f"{p['amount']} ₽"
+                })
+        
+        if history_data:
+            df_hist = pd.DataFrame(history_data)
+            df_hist['Удалить'] = False
+            df_hist = df_hist.sort_values('Дата', ascending=False)
+
+            edited_hist = st.data_editor(
+                df_hist,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": None, "source": None, "date_key": None,
+                    "Удалить": st.column_config.CheckboxColumn("Удалить?")
+                }
+            )
+            
+            if st.button("🗑️ Удалить выбранные операции"):
+                to_delete = edited_hist[edited_hist['Удалить']]
+                for _, row in to_delete.iterrows():
+                    if row['source'] == 'substitution':
+                        if row['date_key'] in st.session_state.data['schedule_exceptions']:
+                            if row['id'] in st.session_state.data['schedule_exceptions'][row['date_key']]:
+                                del st.session_state.data['schedule_exceptions'][row['date_key']][row['id']]
+                    elif row['source'] == 'single_lesson':
+                        st.session_state.data['single_lessons'] = [
+                            sl for sl in st.session_state.data['single_lessons'] if sl['id'] != row['id']
+                        ]
+                    elif row['source'] == 'payment':
+                        st.session_state.data['payments'] = [
+                            p for p in st.session_state.data['payments'] if p['id'] != row['id']
+                        ]
+                
+                save_data(st.session_state.data)
+                st.success("Операции удалены!")
+                st.rerun()
+        else:
+            st.info("История операций пуста")
 def show_student_card(student_id):
     student = get_student_by_id(student_id)
     if not student:
@@ -959,7 +1476,8 @@ def show_student_card(student_id):
         return
 
     parent = get_parent_by_id(student.get('parent_id'))
-    with st.expander(f"📘 {student['name']}", expanded=False):
+    with st.container():
+        st.markdown(f"### 📘 {student['name']}")
         st.write(f"👤 **Пол:** {student.get('gender')}")
         st.write(f"🎂 **Дата рождения:** {student.get('dob')} — {calculate_age(student.get('dob'))} лет")
         st.write(f"📆 Зарегистрирован: {student.get('registration_date')}")
@@ -977,6 +1495,7 @@ def show_student_card(student_id):
                 if st.form_submit_button(f"❌ Отписать от {d}"):
                     student["directions"] = [x for x in student["directions"] if x != d]
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Unassign Direction", f"Removed {d} from {student['name']}")
                     st.success(f"Ученик отписан от {d}")
                     st.rerun()
 
@@ -992,8 +1511,28 @@ def show_student_card(student_id):
                 if st.form_submit_button("Добавить"):
                     student["directions"].append(new_dir)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Assign Direction", f"Added {new_dir} to {student['name']}")
                     st.success(f"Добавлено направление {new_dir}")
                     st.rerun()
+
+        # --- ТАБЛИЦА ПЕРЕНОСОВ И ОТРАБОТОК ---
+        st.subheader("🔄 История переносов и разовых занятий")
+        student_single_lessons = [
+            sl for sl in st.session_state.data.get('single_lessons', [])
+            if sl['student_id'] == student['id']
+        ]
+        
+        if student_single_lessons:
+            sl_data = []
+            for sl in student_single_lessons:
+                sl_data.append({
+                    "Дата": sl['date'],
+                    "Направление": sl['direction'],
+                    "Преподаватель": sl['teacher'],
+                    "Тип": sl.get('type', 'Разовое'),
+                    "Примечание": sl.get('notes', '')
+                })
+            st.dataframe(pd.DataFrame(sl_data), use_container_width=True, hide_index=True)
 
         st.subheader("💳 Оплаты")
         payments = []
@@ -1120,6 +1659,7 @@ def show_student_card(student_id):
                                             del st.session_state.data['attendance'][date_key]
                     
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Edit Attendance", f"Updated attendance for {student['name']}")
                     st.success("Изменения сохранены!")
                     st.rerun()
             
@@ -1221,6 +1761,91 @@ def show_teacher_card(teacher_id):
                     st.rerun()
             else:
                 st.info("Все доступные направления уже добавлены")
+        
+        # --- ТАБЛИЦА ЗАМЕН И ОТРАБОТОК ---
+        st.subheader("🔄 Замены и Отработки")
+        
+        # 1. Замены (где этот учитель заменял кого-то)
+        substitutions = []
+        # Собираем данные для таблицы
+        exceptions = st.session_state.data.get('schedule_exceptions', {})
+        for date_str, lessons in exceptions.items():
+            for l_id, exc in lessons.items():
+                if exc.get('type') == 'substitution' and exc.get('teacher_id') == teacher_id:
+                    # Находим детали урока
+                    lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
+                    direction = lesson_info['direction'] if lesson_info else "Неизвестно"
+                    time_slot = f"{lesson_info['start_time']}-{lesson_info['end_time']}" if lesson_info else ""
+                    
+                    substitutions.append({
+                        "id": l_id, # ID урока для идентификации
+                        "date_key": date_str, # Ключ даты для удаления
+                        "Дата": date_str,
+                        "Тип": "Замена",
+                        "Детали": f"Заменил(а) {exc.get('orig_teacher_name')} ({direction}, {time_slot})",
+                        "Сумма": "Расчет в ЗП"
+                    })
+        
+        # 2. Отработки (разовые занятия, проведенные этим учителем)
+        single_lessons = st.session_state.data.get('single_lessons', [])
+        for i, sl in enumerate(single_lessons):
+            if sl.get('teacher_id') == teacher_id or sl.get('teacher') == teacher['name']:
+                student_name = next((s['name'] for s in st.session_state.data['students'] if s['id'] == sl['student_id']), "Неизвестный")
+                
+                # Сумма: либо сохраненная cost (при переносе), либо из тарифа направления
+                lesson_cost = sl.get('cost', "По тарифу")
+                
+                # Проверяем посещение
+                is_present = False
+                att_record = st.session_state.data.get('attendance', {}).get(sl['date'], {}).get(sl['id'], {}).get(sl['student_id'], {})
+                if att_record.get('present'):
+                    is_present = True
+
+                substitutions.append({
+                    "id": sl['id'],
+                    "date_key": "single", # Маркер что это разовое
+                    "Дата": sl['date'],
+                    "Тип": "Отработка" if sl.get('type') == 'makeup' else "Разовое",
+                    "Ученик": student_name,
+                    "Детали": f"Направление: {sl['direction']}",
+                    "Сумма": lesson_cost,
+                    "Посещение": is_present
+                })
+        
+        if substitutions:
+            df_subs = pd.DataFrame(substitutions)
+            df_subs['Удалить'] = False
+            
+            edited_subs = st.data_editor(
+                df_subs,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": None, "date_key": None, # Скрываем служебные поля
+                    "Удалить": st.column_config.CheckboxColumn("Удалить?"),
+                    "Посещение": st.column_config.CheckboxColumn("Был?", disabled=True)
+                }
+            )
+            
+            if st.button("🗑️ Удалить выбранные записи", key=f"del_subs_{teacher_id}"):
+                to_delete = edited_subs[edited_subs['Удалить']]
+                for _, row in to_delete.iterrows():
+                    if row['date_key'] == 'single':
+                        # Удаляем из single_lessons
+                        st.session_state.data['single_lessons'] = [
+                            sl for sl in st.session_state.data['single_lessons'] if sl['id'] != row['id']
+                        ]
+                    else:
+                        # Удаляем из schedule_exceptions
+                        if row['date_key'] in st.session_state.data['schedule_exceptions']:
+                            if row['id'] in st.session_state.data['schedule_exceptions'][row['date_key']]:
+                                del st.session_state.data['schedule_exceptions'][row['date_key']][row['id']]
+                
+                save_data(st.session_state.data)
+                st.success("Записи удалены")
+                st.rerun()
+        else:
+            st.info("Нет записей о заменах или отработках.")
 
         # Кнопка сохранения изменений
         if st.session_state[state_key]["edited"]:
@@ -1238,6 +1863,7 @@ def show_teacher_card(teacher_id):
                         break
                 
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Edit Teacher", f"Updated directions for {teacher['name']}")
                 
                 # Сбрасываем состояние
                 st.session_state[state_key] = {
@@ -1413,6 +2039,14 @@ def show_teacher_card(teacher_id):
 def show_students_page():
     st.header("👦👧 Ученики и оплаты")
 
+    # Проверка режима редактирования карточки
+    if st.session_state.get('edit_student_id'):
+        if st.button("🔙 Вернуться к списку"):
+            st.session_state.edit_student_id = None
+            st.rerun()
+        show_student_card(st.session_state.edit_student_id)
+        return
+
     students = st.session_state.data['students']
     parents = st.session_state.data['parents']
     directions = st.session_state.data['directions']
@@ -1471,6 +2105,7 @@ def show_students_page():
                         if p['id'] == parent_id:
                             p.setdefault("children_ids", []).append(new_student['id'])
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Student", f"Added {name}")
                     st.success(f"Ученик {name} добавлен.")
                     st.rerun()
                 else:
@@ -1501,6 +2136,7 @@ def show_students_page():
                             s['notes'] = row['notes']
                             s['directions'] = [d.strip() for d in str(row['directions']).split(',') if d.strip()]
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Edit Students", "Updated students table")
                 st.success("Данные обновлены.")
                 st.rerun()
             # Создаем DataFrame с колонкой для удаления
@@ -1542,15 +2178,56 @@ def show_students_page():
                                 del st.session_state.data['attendance'][date_key][lesson_id][student_id]
                 
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Delete Students", f"Deleted {len(to_delete)} students")
                 st.success(f"Удалено {len(to_delete)} учеников!")
                 st.rerun()
             else:
                 st.warning("Не выбрано ни одного ученика для удаления")
         else:
             st.info("Нет учеников.")
+            
     else:
+        # Card View - Fixed Loop
         for student in students:
-            show_student_card(student['id'])
+            with st.container(border=True):
+                st.markdown(f"#### {student['name']}")
+                st.caption(f"Возраст: {calculate_age(student.get('dob'))} | Пол: {student.get('gender')}")
+
+                # Визуализация прогресса по каждому направлению
+                for direction in student.get('directions', []):
+                    # Считаем уроки в этом месяце
+                    lessons_this_month = get_month_lessons(direction, date.today().year, date.today().month)
+                    total_lessons = len(lessons_this_month)
+                    
+                    # Подсчет посещений
+                    attended = 0
+                    current_month_str = date.today().strftime("%Y-%m")
+                    
+                    # Проходим по всем датам месяца
+                    for l_date in lessons_this_month:
+                        d_str = l_date.strftime("%Y-%m-%d")
+                        if d_str in st.session_state.data.get('attendance', {}):
+                            for l_id, students_in_l in st.session_state.data['attendance'][d_str].items():
+                                if student['id'] in students_in_l:
+                                    # Проверяем направление
+                                    lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
+                                    if not lesson_info:
+                                        lesson_info = next((l for l in st.session_state.data.get('single_lessons', []) if l['id'] == l_id), None)
+                                    
+                                    if lesson_info and lesson_info.get('direction') == direction:
+                                        if students_in_l[student['id']].get('present'):
+                                            attended += 1
+                    
+                    col_vis, col_info = st.columns([3, 1])
+                    with col_vis:
+                        progress = attended / total_lessons if total_lessons > 0 else 0
+                        st.progress(min(progress, 1.0))
+                    with col_info:
+                        st.caption(f"{direction}: {attended}/{total_lessons}")
+                
+                if st.button("Открыть карточку", key=f"open_card_{student['id']}"):
+                    st.session_state.edit_student_id = student['id']
+                    st.rerun()
 
     # 💳 Оплаты
     st.subheader("💳 Добавить оплату")
@@ -1636,6 +2313,7 @@ def show_students_page():
                                 st.session_state.data['attendance'][date_key][lesson_id][selected_id]['paid'] = True
                 
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Add Payment", f"Added {amount} for {student_map[selected_id]}")
                 st.success("Оплата добавлена и синхронизирована с посещениями!")
                 st.rerun()
 
@@ -1677,6 +2355,7 @@ def show_teachers_page():
                     }
                     teachers.append(new_teacher)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Teacher", f"Added {name}")
                     st.success(f"Преподаватель {name} добавлен.")
                     st.rerun()
                 else:
@@ -1716,6 +2395,7 @@ def show_teachers_page():
                             lesson['teacher'] = teacher['name']
             
             save_data(st.session_state.data)
+            log_action(st.session_state.username, "Edit Teachers", "Updated teachers table")
             st.success("Изменения сохранены!")
             st.rerun()
         # Создаем DataFrame с колонкой для удаления
@@ -1752,6 +2432,7 @@ def show_teachers_page():
                 ]
                 
                 save_data(st.session_state.data)
+                log_action(st.session_state.username, "Delete Teachers", f"Deleted {len(to_delete)} teachers")
                 st.success(f"Удалено {len(to_delete)} преподавателей!")
                 st.rerun()
             else:
@@ -1778,7 +2459,7 @@ def show_schedule_page():
     teachers = data.get("teachers", [])
 
     # === Добавление занятия ===
-    if st.session_state.role in ['admin', 'teacher']:
+    if st.session_state.role in ['admin', 'teacher', 'reception']:
         with st.expander("➕ Добавить занятие в расписание", expanded=False):
             with st.form("new_schedule_form"):
                 col1, col2 = st.columns(2)
@@ -1804,6 +2485,7 @@ def show_schedule_page():
                         'day': day_of_week
                     })
                     save_data(data)
+                    log_action(st.session_state.username, "Add Schedule", f"Added {direction_name} on {day_of_week}")
                     st.success("Занятие добавлено.")
                     st.rerun()
 
@@ -1829,7 +2511,7 @@ def show_schedule_page():
             'start_time': l['start_time'],
             'end_time': l['end_time'],
             'day': russian_day,
-            'type': 'single',
+            'type': l.get('type', 'single'),
             'student_id': l['student_id']
         }
         for l in st.session_state.data.get('single_lessons', [])
@@ -1843,9 +2525,27 @@ def show_schedule_page():
 
     if all_lessons:
         for lesson in all_lessons:
-            lesson_type = "(Разовое)" if lesson.get('type') == 'single' else ""
-            with st.expander(f"{lesson['direction']} {lesson_type} ({lesson['start_time']}-{lesson['end_time']}, {lesson['teacher']})", expanded=False):
-                date_key = selected_date.strftime("%Y-%m-%d")
+            l_type = lesson.get('type', 'regular')
+            lesson_type_str = ""
+            if l_type == 'single':
+                lesson_type_str = "(Разовое)"
+            elif l_type == 'makeup':
+                lesson_type_str = "(Отработка)"
+            
+            # Проверка замен
+            date_key = selected_date.strftime("%Y-%m-%d")
+            exceptions = st.session_state.data.get('schedule_exceptions', {}).get(date_key, {})
+            display_teacher = lesson['teacher']
+            sub_info = ""
+            if lesson['id'] in exceptions:
+                exc = exceptions[lesson['id']]
+                if exc['type'] == 'substitution':
+                    sub_teacher = get_teacher_by_id(exc['teacher_id'])
+                    if sub_teacher:
+                        display_teacher = sub_teacher['name']
+                        sub_info = f" 🔄 (Замена: {lesson['teacher']} ➝ {display_teacher})"
+            
+            with st.expander(f"{lesson['direction']} {lesson_type_str} ({lesson['start_time']}-{lesson['end_time']}, {display_teacher}){sub_info}", expanded=False):
                 lesson_key = lesson['id']
                 att_key = f"att_{lesson_key}_{date_key}"
 
@@ -1857,13 +2557,13 @@ def show_schedule_page():
                     }
 
                 # Найдём учеников
-                if lesson.get('type') == 'single':
+                if lesson.get('type') in ['single', 'makeup']:
                     # Для разовых занятий - только один ученик
                     student = next((s for s in students if s['id'] == lesson.get('student_id')), None)
                     if student:
                         students_in_dir = [student]
-                        # Добавляем направление ученику, если его нет
-                        if lesson['direction'] not in student.get('directions', []):
+                        # Добавляем направление ученику, если его нет (ТОЛЬКО ЕСЛИ НЕ ОТРАБОТКА)
+                        if lesson.get('type') != 'makeup' and lesson['direction'] not in student.get('directions', []):
                             student['directions'].append(lesson['direction'])
                             save_data(st.session_state.data)
                     else:
@@ -1932,6 +2632,12 @@ def show_schedule_page():
 
                 # В блоке сохранения посещений замените проверку оплаты на:
                 if st.button("💾 Сохранить посещения", key=f"save_{att_key}"):
+                    # Проверка на рассинхронизацию
+                    if len(edited_df) != len(students_in_dir):
+                        st.warning("Список учеников изменился. Пожалуйста, обновите страницу.")
+                        del st.session_state[att_key]
+                        st.rerun()
+
                     for idx, s in enumerate(students_in_dir):
                         s_id = s['id']
                         new_status = {
@@ -1982,6 +2688,7 @@ def show_schedule_page():
                         attendance[date_key][lesson_key][s_id] = new_status
                     
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Mark Attendance", f"Updated attendance for {date_key}")
                     st.success("Посещения сохранены!")
                     time.sleep(0.3)
                     st.rerun()
@@ -2092,6 +2799,7 @@ def show_schedule_page():
                                 del attendance[date_key]
             
             save_data(st.session_state.data)
+            log_action(st.session_state.username, "Edit Schedule", "Updated schedule table")
             st.success("Изменения в расписании сохранены!")
             st.rerun()
         # Кнопка для удаления выбранных занятий
@@ -2107,6 +2815,7 @@ def show_schedule_page():
                         if not attendance[date_key]:
                             del attendance[date_key]
                 save_data(data)
+                log_action(st.session_state.username, "Delete Schedule", f"Deleted {len(rows_to_delete)} lessons")
                 st.success(f"Удалено {len(rows_to_delete)} занятий!")
                 st.rerun()
             else:
@@ -2160,6 +2869,7 @@ def show_materials_page():
                     }
                     st.session_state.data['materials'].append(new_material)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Material", f"Added {material_name}")
                     st.success("Материал успешно добавлен!")
                     st.rerun()
                 else:
@@ -2211,6 +2921,7 @@ def show_materials_page():
                         break
             
             save_data(st.session_state.data)
+            log_action(st.session_state.username, "Edit Materials", "Updated materials table")
             st.success("Изменения сохранены!")
             st.rerun()
     else:
@@ -2247,6 +2958,7 @@ def show_kanban_board():
                     }
                     st.session_state.data['kanban_tasks']['ToDo'].append(new_task)
                     save_data(st.session_state.data)
+                    log_action(st.session_state.username, "Add Task", f"Added task: {task_title}")
                     st.success("Задача добавлена!")
                     st.rerun()
                 else:
@@ -2368,6 +3080,7 @@ def show_bulk_upload_page():
                             
                             st.session_state.data['directions'].extend(new_directions)
                             st.success(f"Добавлено {len(new_directions)} направлений!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded directions")
                     
                     elif data_type == "Ученики":
                         required_cols = ['name', 'dob', 'gender']
@@ -2419,6 +3132,7 @@ def show_bulk_upload_page():
                             st.session_state.data['students'].extend(new_students)
                             save_data(st.session_state.data)
                             st.success(f"Добавлено {len(new_students)} учеников!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded students")
                     
                     elif data_type == "Родители":
                         required_cols = ['name', 'phone']
@@ -2436,6 +3150,7 @@ def show_bulk_upload_page():
                             
                             st.session_state.data['parents'].extend(new_parents)
                             st.success(f"Добавлено {len(new_parents)} родителей!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded parents")
                     
                     elif data_type == "Преподаватели":
                         required_cols = ['name']
@@ -2480,6 +3195,7 @@ def show_bulk_upload_page():
                             
                             st.session_state.data['teachers'].extend(new_teachers)
                             st.success(f"Добавлено {len(new_teachers)} преподавателей!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded teachers")
                             
                     
                     elif data_type == "Материалы":
@@ -2502,6 +3218,7 @@ def show_bulk_upload_page():
                             
                             st.session_state.data['materials'].extend(new_materials)
                             st.success(f"Добавлено {len(new_materials)} материалов!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded materials")
                     # --- НОВЫЙ БЛОК ДЛЯ РАСПИСАНИЯ ---
                     elif data_type == "Расписание":
                         required_cols = ['direction', 'teacher', 'start_time', 'end_time', 'day']
@@ -2529,6 +3246,7 @@ def show_bulk_upload_page():
                             
                             st.session_state.data['schedule'].extend(new_schedule_entries)
                             st.success(f"Добавлено {len(new_schedule_entries)} занятий в расписание!")
+                            log_action(st.session_state.username, "Bulk Upload", "Uploaded schedule")
                     # --- КОНЕЦ НОВОГО БЛОКА ---
                     
                     save_data(st.session_state.data)
@@ -2552,6 +3270,7 @@ def show_data_management_page():
     with col1:
         if st.button("🔄 Создать резервную копию"):
             if save_data(st.session_state.data):
+                log_action(st.session_state.username, "Backup", "Created manual backup")
                 st.success("Резервная копия создана!")
     
     with col2:
@@ -2657,6 +3376,7 @@ def show_version_history_page():
                             if confirm:
                                 restored_data = json.loads(content)
                                 save_data(restored_data)
+                                log_action(st.session_state.username, "Restore Version", f"Restored version from {committed_at}")
                                 st.success("Версия восстановлена! Обновите страницу.")
                                 time.sleep(2)
                                 st.rerun()
@@ -2713,6 +3433,7 @@ def show_data_archives_page():
                     st.session_state.data["_archives"].append(new_archive)
                     save_data(st.session_state.data)
 
+                    log_action(st.session_state.username, "Create Archive", f"Created archive: {archive_name}")
                     st.success(f"Архив успешно создан! [Открыть]({gist_info['html_url']})")
                     st.rerun()
 
@@ -2754,6 +3475,7 @@ def show_data_archives_page():
                                     restored_data = json.loads(content)
                                     st.session_state.data = restored_data
                                     save_data(st.session_state.data)
+                                    log_action(st.session_state.username, "Restore Archive", f"Restored archive: {archive_name}")
                                     st.success("Архив успешно восстановлен! Обновите страницу.")
                                     time.sleep(2)
                                     st.rerun()
@@ -2777,6 +3499,7 @@ def show_data_archives_page():
                                         if a.get("id") != archive.get("id")
                                     ]
                                     save_data(st.session_state.data)
+                                    log_action(st.session_state.username, "Delete Archive", f"Deleted archive: {archive_name}")
                                     st.success("Архив удален!")
                                     st.rerun()
                                 else:
@@ -2927,6 +3650,7 @@ def show_payments_report():
             st.session_state.data['payments'] = [p for p in st.session_state.data['payments'] if p['id'] not in payments_to_delete]
             
             save_data(st.session_state.data)
+            log_action(st.session_state.username, "Edit Payments", "Updated payments table")
             st.success("Изменения сохранены и синхронизированы!")
             st.rerun()
     
@@ -3021,49 +3745,50 @@ def show_payments_report():
                     else:
                         st.warning("Для выбранного направления нет занятий в этом месяце!")
     # Статистика
-    st.subheader("📈 Статистика")
-    total_payments = df_filtered['amount'].sum()
-    st.metric("Общая сумма оплат", f"{total_payments:.2f} ₽")
-    
-    tab1, tab2 = st.tabs(["По направлениям", "По типам оплат"])
-    
-    with tab1:
-        if not df_filtered.empty:
-            payments_by_direction = df_filtered.groupby('direction')['amount'].sum().reset_index()
-            st.bar_chart(payments_by_direction.set_index('direction'))
-            
-            with st.expander("Таблица данных"):
-                st.dataframe(
-                    payments_by_direction.sort_values('amount', ascending=False),
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={
-                        "direction": "Направление",
-                        "amount": st.column_config.NumberColumn(
-                            "Сумма",
-                            format="%.2f ₽"
-                        )
-                    }
-                )
-    
-    with tab2:
-        if not df_filtered.empty:
-            payments_by_type = df_filtered.groupby('type')['amount'].sum().reset_index()
-            st.bar_chart(payments_by_type.set_index('type'))
-            
-            with st.expander("Таблица данных"):
-                st.dataframe(
-                    payments_by_type.sort_values('amount', ascending=False),
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={
-                        "type": "Тип оплаты",
-                        "amount": st.column_config.NumberColumn(
-                            "Сумма",
-                            format="%.2f ₽"
-                        )
-                    }
-                )
+    if st.session_state.role != 'reception':
+        st.subheader("📈 Статистика")
+        total_payments = df_filtered['amount'].sum()
+        st.metric("Общая сумма оплат", f"{total_payments:.2f} ₽")
+        
+        tab1, tab2 = st.tabs(["По направлениям", "По типам оплат"])
+        
+        with tab1:
+            if not df_filtered.empty:
+                payments_by_direction = df_filtered.groupby('direction')['amount'].sum().reset_index()
+                st.bar_chart(payments_by_direction.set_index('direction'))
+                
+                with st.expander("Таблица данных"):
+                    st.dataframe(
+                        payments_by_direction.sort_values('amount', ascending=False),
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "direction": "Направление",
+                            "amount": st.column_config.NumberColumn(
+                                "Сумма",
+                                format="%.2f ₽"
+                            )
+                        }
+                    )
+        
+        with tab2:
+            if not df_filtered.empty:
+                payments_by_type = df_filtered.groupby('type')['amount'].sum().reset_index()
+                st.bar_chart(payments_by_type.set_index('type'))
+                
+                with st.expander("Таблица данных"):
+                    st.dataframe(
+                        payments_by_type.sort_values('amount', ascending=False),
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "type": "Тип оплаты",
+                            "amount": st.column_config.NumberColumn(
+                                "Сумма",
+                                format="%.2f ₽"
+                            )
+                        }
+                    )
 
 def show_materials_report():
     """Page for materials report."""
@@ -3362,6 +4087,7 @@ def show_reception_helper():
                             st.session_state.data['students'].append(new_student)
                             selected_student_id = new_student['id']
                             save_data(st.session_state.data)
+                            log_action(st.session_state.username, "Add Student (Reception)", f"Added {name}")
                             st.success("Ученик добавлен!")
                             st.rerun()
         
@@ -3541,11 +4267,6 @@ def show_reception_helper():
             
             st.session_state.data.setdefault('single_lessons', []).append(new_lesson)
             
-            # Добавляем направление ученику
-            student = next((s for s in st.session_state.data['students'] if s['id'] == selected_student_id), None)
-            if student and selected_direction not in student.get('directions', []):
-                student['directions'].append(selected_direction)
-            
             # Создаем запись о посещении
             if date_str not in st.session_state.data['attendance']:
                 st.session_state.data['attendance'][date_str] = {}
@@ -3560,6 +4281,7 @@ def show_reception_helper():
             }
             
             save_data(st.session_state.data)
+            log_action(st.session_state.username, "Book Single Lesson", f"Booked {selected_direction} for {selected_student_id}")
             st.success(f"Ученик записан к преподавателю {selected_teacher['name']}!")
             st.rerun()
 # --- Main App Title and Navigation ---
@@ -3596,6 +4318,7 @@ else:
         st.sidebar.button("👦 Ученики и оплаты", on_click=lambda: _navigate_to('students'))
         st.sidebar.button("👩‍🏫 Преподаватели", on_click=lambda: _navigate_to('teachers'))
         st.sidebar.button("📅 Расписание и посещения", on_click=lambda: _navigate_to('schedule'))
+        st.sidebar.button("💰 Финансы и Абонементы", on_click=lambda: _navigate_to('financial_control'))
         st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
         st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
         #st.sidebar.button("🖼️ Медиа-галерея", on_click=lambda: _navigate_to('media_gallery'))
@@ -3603,6 +4326,7 @@ else:
         st.sidebar.button("👋 Помощник ресепшена", on_click=lambda: _navigate_to('reception_helper'))
         
         st.sidebar.markdown("---")
+        st.sidebar.button("🕵️ История действий", on_click=lambda: _navigate_to('audit_log'))
         st.sidebar.button("📊 Отчет по оплатам", on_click=lambda: _navigate_to('payments_report'))
         st.sidebar.button("📊 Отчет по закупкам", on_click=lambda: _navigate_to('materials_report'))
         
@@ -3618,11 +4342,14 @@ else:
         st.sidebar.button("🎨 Направления", on_click=lambda: _navigate_to('directions'))
         st.sidebar.button("👦 Ученики и оплаты", on_click=lambda: _navigate_to('students'))
         st.sidebar.button("📅 Расписание и посещения", on_click=lambda: _navigate_to('schedule'))
+        st.sidebar.button("💰 Финансы и Абонементы", on_click=lambda: _navigate_to('financial_control'))
         st.sidebar.button("🛍️ Материалы и закупки", on_click=lambda: _navigate_to('materials'))
         st.sidebar.button("📌 Канбан-доска", on_click=lambda: _navigate_to('kanban'))
         st.sidebar.button("👋 Помощник ресепшена", on_click=lambda: _navigate_to('reception_helper'))
         st.sidebar.markdown("---")
         st.sidebar.button("📊 Отчет по оплатам", on_click=lambda: _navigate_to('payments_report'))
+    elif st.session_state.page == 'audit_log':
+        show_audit_log_page()
     st.sidebar.markdown("---")
     st.sidebar.text(f"👤 {st.session_state.username} ({st.session_state.role})")
     st.sidebar.button("🚪 Выйти", on_click=logout)
@@ -3725,6 +4452,7 @@ else:
                 }
                 save_data(initial_data)
                 st.session_state.data = load_data()
+                log_action(st.session_state.username, "Clear Data", "Cleared all data")
                 st.success("Все данные очищены!")
                 st.session_state.show_clear_confirm = False
                 st.rerun()
@@ -3743,6 +4471,8 @@ else:
         show_teachers_page()
     elif st.session_state.page == 'schedule':
         show_schedule_page()
+    elif st.session_state.page == 'financial_control':
+        show_financial_control_page()
     elif st.session_state.page == 'materials':
         show_materials_page()
     elif st.session_state.page == 'kanban':
