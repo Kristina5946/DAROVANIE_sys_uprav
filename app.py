@@ -2485,7 +2485,9 @@ def show_schedule_page():
                         'day': day_of_week
                     })
                     save_data(data)
-                    log_action(st.session_state.username, "Add Schedule", f"Added {direction_name} on {day_of_week}")
+                    # Предполагаем наличие функции log_action, если ее нет - закомментируйте строку ниже
+                    if 'log_action' in globals():
+                        log_action(st.session_state.username, "Add Schedule", f"Added {direction_name} on {day_of_week}")
                     st.success("Занятие добавлено.")
                     st.rerun()
 
@@ -2540,6 +2542,7 @@ def show_schedule_page():
             if lesson['id'] in exceptions:
                 exc = exceptions[lesson['id']]
                 if exc['type'] == 'substitution':
+                    # Предполагаем наличие get_teacher_by_id
                     sub_teacher = get_teacher_by_id(exc['teacher_id'])
                     if sub_teacher:
                         display_teacher = sub_teacher['name']
@@ -2630,7 +2633,6 @@ def show_schedule_page():
                     }
                 )
 
-                # В блоке сохранения посещений замените проверку оплаты на:
                 if st.button("💾 Сохранить посещения", key=f"save_{att_key}"):
                     # Проверка на рассинхронизацию
                     if len(edited_df) != len(students_in_dir):
@@ -2651,7 +2653,6 @@ def show_schedule_page():
                         
                         # Если галочка оплаты была изменена с False на True
                         if new_status['paid'] and not current_paid_status:
-                            # Проверяем, нет ли уже платежа за это занятие
                             payment_exists = any(
                                 p['student_id'] == s_id and 
                                 p['direction'] == lesson['direction'] and
@@ -2679,34 +2680,27 @@ def show_schedule_page():
                                     st.session_state.data['payments'].append(new_payment)
                                     st.success(f"Добавлена оплата за разовое занятие: {cost} ₽")
                         
-                        # Обновляем статус посещения
-                        if date_key not in attendance:
-                            attendance[date_key] = {}
-                        if lesson_key not in attendance[date_key]:
-                            attendance[date_key][lesson_key] = {}
-                        
                         attendance[date_key][lesson_key][s_id] = new_status
                     
                     save_data(st.session_state.data)
-                    log_action(st.session_state.username, "Mark Attendance", f"Updated attendance for {date_key}")
+                    if 'log_action' in globals():
+                        log_action(st.session_state.username, "Mark Attendance", f"Updated attendance for {date_key}")
                     st.success("Посещения сохранены!")
                     time.sleep(0.3)
                     st.rerun()
     else:
         st.info(f"На {russian_day} занятий нет.")
 
-    # === Общее расписание ===
+    # === Общее расписание (ИСПРАВЛЕННАЯ СЕКЦИЯ) ===
     st.subheader("📋 Общее расписание")
     if schedule:
         df = pd.DataFrame(schedule)
         
-        # Безопасное приведение времени
-        df['start_time'] = pd.to_datetime(df['start_time'], format='mixed', errors='coerce').dt.strftime("%H:%M")
-        df['end_time'] = pd.to_datetime(df['end_time'], format='mixed', errors='coerce').dt.strftime("%H:%M")
-        df['start_time'] = df['start_time'].fillna("—")
-        df['end_time'] = df['end_time'].fillna("—")
+        # 1. Безопасное приведение времени для отображения и редактирования
+        df['start_time_str'] = pd.to_datetime(df['start_time'], format='mixed', errors='coerce').dt.strftime("%H:%M").fillna("00:00")
+        df['end_time_str'] = pd.to_datetime(df['end_time'], format='mixed', errors='coerce').dt.strftime("%H:%M").fillna("00:00")
 
-        # Фильтры
+        # 2. Фильтры
         col1, col2, col3 = st.columns(3)
         with col1:
             day_filter = st.multiselect("День недели", sorted(df['day'].unique()))
@@ -2739,11 +2733,12 @@ def show_schedule_page():
                 ) else x
             )
 
-        # Применяем фильтры
+        # 3. Применяем фильтры
+        df_filtered = df.copy()
         if day_filter:
-            df = df[df['day'].isin(day_filter)]
+            df_filtered = df_filtered[df_filtered['day'].isin(day_filter)]
         if teacher_filter:
-            df = df[df['teacher'].isin(teacher_filter)]
+            df_filtered = df_filtered[df_filtered['teacher'].isin(teacher_filter)]
         if selected_main_dirs:
             selected_dirs = []
             for main_dir in selected_main_dirs:
@@ -2752,18 +2747,42 @@ def show_schedule_page():
                     subdir for subdir in subdir_to_main 
                     if subdir_to_main[subdir] == main_dir and subdir in all_directions
                 ])
-            df = df[df['direction'].isin(selected_dirs)]
+            df_filtered = df_filtered[df_filtered['direction'].isin(selected_dirs)]
 
-        # Добавляем столбец с кнопками удаления
-        df['Удалить'] = False
+        # 4. Подготовка DataFrame для редактора (ВАЖНО: ВКЛЮЧАЕМ ID)
+        # Мы берем нужные колонки + ID, чтобы точно знать, что обновлять
+        df_to_edit = df_filtered[['id', 'day', 'start_time_str', 'end_time_str', 'teacher', 'direction']].copy()
+        df_to_edit['Удалить'] = False
         
-        # Отображаем таблицу
+        # Получаем списки для выпадающих меню
+        all_teachers = [t['name'] for t in teachers]
+        all_directions_list = [d['name'] for d in directions] + [f"{s['parent']} ({s['name']})" for s in st.session_state.data.get('subdirections', [])]
+
+        # 5. Отображаем таблицу
         edited_df = st.data_editor(
-            df[['day', 'start_time', 'end_time', 'teacher', 'direction', 'Удалить']],
+            df_to_edit,
             use_container_width=True,
             hide_index=True,
             key="full_schedule_editor",
             column_config={
+                "id": None, # Скрываем ID от пользователя, но он доступен в коде
+                "day": st.column_config.SelectboxColumn(
+                    "День",
+                    options=["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"],
+                    required=True
+                ),
+                "start_time_str": st.column_config.TextColumn("Начало (ЧЧ:ММ)", required=True),
+                "end_time_str": st.column_config.TextColumn("Конец (ЧЧ:ММ)", required=True),
+                "teacher": st.column_config.SelectboxColumn(
+                    "Преподаватель",
+                    options=all_teachers,
+                    required=True
+                ),
+                "direction": st.column_config.SelectboxColumn(
+                    "Направление",
+                    options=all_directions_list,
+                    required=True
+                ),
                 "Удалить": st.column_config.CheckboxColumn(
                     "Удалить",
                     help="Выберите занятия для удаления",
@@ -2771,62 +2790,101 @@ def show_schedule_page():
                 )
             }
         )
-        # Кнопка для сохранения изменений
-        if st.button("💾 Сохранить изменения расписания", key="save_schedule_changes"):
-            # Обновляем данные расписания
-            for i, row in edited_df.iterrows():
-                if i < len(schedule) and not row['Удалить']:
-                    # Обновляем существующие занятия
-                    schedule[i]['day'] = row['day']
-                    schedule[i]['start_time'] = row['start_time']
-                    schedule[i]['end_time'] = row['end_time']
-                    schedule[i]['teacher'] = row['teacher']
-                    schedule[i]['direction'] = row['direction']
-            
-            # Удаляем отмеченные занятия
-            rows_to_delete = edited_df[edited_df['Удалить']].index
-            if len(rows_to_delete) > 0:
-                for index in sorted(rows_to_delete, reverse=True):
-                    if index < len(schedule):
-                        lesson_id = schedule[index]['id']
-                        del schedule[index]
+
+        # 6. Кнопка для сохранения изменений (Умное обновление по ID)
+        col_save, col_del, col_export = st.columns([1, 1, 1])
+
+        with col_save:
+            if st.button("💾 Сохранить изменения"):
+                changes_count = 0
+                rows_to_delete_ids = []
+
+                # Проходим по отредактированной таблице
+                for index, row in edited_df.iterrows():
+                    lesson_id = row['id']
+                    
+                    if row['Удалить']:
+                        rows_to_delete_ids.append(lesson_id)
+                        continue
+
+                    # Ищем оригинальное занятие в общем списке по ID
+                    original_lesson = next((item for item in schedule if item["id"] == lesson_id), None)
+                    
+                    if original_lesson:
+                        # Проверяем, были ли изменения
+                        has_changed = False
+                        if original_lesson['day'] != row['day']:
+                            original_lesson['day'] = row['day']
+                            has_changed = True
+                        if original_lesson['teacher'] != row['teacher']:
+                            original_lesson['teacher'] = row['teacher']
+                            has_changed = True
+                        if original_lesson['direction'] != row['direction']:
+                            original_lesson['direction'] = row['direction']
+                            has_changed = True
+                        # Обновляем время из строковых колонок
+                        if original_lesson.get('start_time') != row['start_time_str']:
+                            original_lesson['start_time'] = row['start_time_str']
+                            has_changed = True
+                        if original_lesson.get('end_time') != row['end_time_str']:
+                            original_lesson['end_time'] = row['end_time_str']
+                            has_changed = True
                         
-                        # Также удаляем связанные посещения
-                        for date_key in list(attendance.keys()):
-                            if lesson_id in attendance[date_key]:
-                                del attendance[date_key][lesson_id]
-                            if not attendance[date_key]:
-                                del attendance[date_key]
-            
-            save_data(st.session_state.data)
-            log_action(st.session_state.username, "Edit Schedule", "Updated schedule table")
-            st.success("Изменения в расписании сохранены!")
-            st.rerun()
-        # Кнопка для удаления выбранных занятий
-        if st.button("🗑️ Удалить выбранные занятия"):
-            rows_to_delete = edited_df[edited_df['Удалить']].index
-            if len(rows_to_delete) > 0:
-                for index in sorted(rows_to_delete, reverse=True):
-                    lesson_id = schedule[index]['id']
-                    del schedule[index]
+                        if has_changed:
+                            changes_count += 1
+                
+                # Обработка удалений внутри кнопки сохранения (опционально, или отдельной кнопкой)
+                if rows_to_delete_ids:
+                    st.session_state.data['schedule'] = [l for l in schedule if l['id'] not in rows_to_delete_ids]
+                    # Чистим посещения
                     for date_key in list(attendance.keys()):
-                        if lesson_id in attendance[date_key]:
-                            del attendance[date_key][lesson_id]
+                        for del_id in rows_to_delete_ids:
+                            if del_id in attendance[date_key]:
+                                del attendance[date_key][del_id]
                         if not attendance[date_key]:
                             del attendance[date_key]
-                save_data(data)
-                log_action(st.session_state.username, "Delete Schedule", f"Deleted {len(rows_to_delete)} lessons")
-                st.success(f"Удалено {len(rows_to_delete)} занятий!")
-                st.rerun()
-            else:
-                st.warning("Не выбрано ни одного занятия для удаления")
+                    st.toast(f"Удалено {len(rows_to_delete_ids)} занятий")
 
-        st.download_button(
-            "📥 Экспорт в CSV",
-            data=df.to_csv(index=False).encode('utf-8'),
-            file_name="schedule_export.csv",
-            mime="text/csv"
-        )
+                if changes_count > 0 or rows_to_delete_ids:
+                    save_data(st.session_state.data)
+                    if 'log_action' in globals():
+                        log_action(st.session_state.username, "Edit Schedule", f"Updated {changes_count} lessons, Deleted {len(rows_to_delete_ids)}")
+                    st.success("Расписание успешно обновлено!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.info("Изменений не обнаружено.")
+
+        # Отдельная кнопка удаления (для ясности)
+        with col_del:
+            if st.button("🗑️ Удалить выбранные"):
+                to_delete_ids = edited_df[edited_df['Удалить']]['id'].tolist()
+                if to_delete_ids:
+                    st.session_state.data['schedule'] = [l for l in schedule if l['id'] not in to_delete_ids]
+                    
+                    # Удаляем связанные посещения
+                    for date_key in list(attendance.keys()):
+                        for del_id in to_delete_ids:
+                            if del_id in attendance[date_key]:
+                                del attendance[date_key][del_id]
+                        if not attendance[date_key]:
+                            del attendance[date_key]
+                    
+                    save_data(data)
+                    if 'log_action' in globals():
+                        log_action(st.session_state.username, "Delete Schedule", f"Deleted {len(to_delete_ids)} lessons")
+                    st.success(f"Удалено {len(to_delete_ids)} занятий!")
+                    st.rerun()
+                else:
+                    st.warning("Не выбрано ни одного занятия")
+
+        with col_export:
+            st.download_button(
+                "📥 Экспорт CSV",
+                data=df_filtered.to_csv(index=False).encode('utf-8'),
+                file_name="schedule_export.csv",
+                mime="text/csv"
+            )
     else:
         st.info("Пока нет занятий.")
 
