@@ -53,6 +53,7 @@ if not os.path.exists(DATA_FILE):
         'parents': [],
         'payments': [],
         'schedule': [],
+        'archived_schedule': [],
         'materials': [],
         'single_lessons': [], 
         'attendance': {},
@@ -205,8 +206,8 @@ def archive_data():
                 'id': gist_data['id'],
                 'size': len(json_str)
             })
-            st.session_state.data['payments'] = []
-            st.session_state.data['attendance'] = {}
+            # st.session_state.data['payments'] = [] # Отключено для безопасности
+            # st.session_state.data['attendance'] = {} # Отключено для безопасности
             if save_data(st.session_state.data):
                 st.success(f"Архив создан: {gist_data['html_url']}")
                 return True
@@ -272,6 +273,7 @@ if 'data' not in st.session_state:
         'parents': [],
         'payments': [],
         'schedule': [],
+        'archived_schedule': [],
         'materials': [],
         'single_lessons': [], 
         'kanban_tasks': {'ToDo': [], 'InProgress': [], 'Done': []},
@@ -1160,6 +1162,26 @@ def show_financial_control_page():
                     # Получаем все даты занятий в этом месяце
                     dates = get_month_lessons(d_name, current_year, current_month)
                     
+                    # --- ДОБАВЛЕНИЕ: Учитываем фактические посещения (даже если расписание изменилось) ---
+                    attendance_dates = set()
+                    for date_str, lessons_data in st.session_state.data.get('attendance', {}).items():
+                        try:
+                            d_date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+                            if d_date_obj.year == current_year and d_date_obj.month == current_month:
+                                for l_id, students_in_l in lessons_data.items():
+                                    if s['id'] in students_in_l:
+                                        # Ищем занятие в расписании или архиве
+                                        all_lessons_source = st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', [])
+                                        l_info = next((l for l in all_lessons_source if l['id'] == l_id), None)
+                                        if l_info and l_info.get('direction') == d_name:
+                                            attendance_dates.add(d_date_obj)
+                        except:
+                            pass
+                    
+                    # Объединяем плановые даты и даты фактических посещений
+                    dates = sorted(list(set(dates) | attendance_dates))
+                    # -----------------------------------------------------------------------------------
+                    
                     # Рисуем "квадратики"
                     cols = st.columns(len(dates) if dates else 1)
                     
@@ -1177,12 +1199,10 @@ def show_financial_control_page():
                         # Ищем, был ли ученик на любом уроке этого направления в этот день
                         for l_id, students_in_l in attendance_day.items():
                              # Надо проверить, относится ли урок к направлению (нужен маппинг)
-                             # Для скорости просто ищем запись
                              if s['id'] in students_in_l:
                                 # Проверяем, относится ли урок к текущему направлению
-                                lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
-                                if not lesson_info:
-                                    lesson_info = next((l for l in st.session_state.data.get('single_lessons', []) if l['id'] == l_id), None)
+                                all_lessons_source = st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', [])
+                                lesson_info = next((l for l in all_lessons_source if l['id'] == l_id), None)
                                 
                                 if lesson_info and lesson_info.get('direction') == d_name and s['id'] in students_in_l:
                                     record = students_in_l[s['id']]
@@ -1566,7 +1586,7 @@ def show_student_card(student_id):
                 if student_id in students_data:
                     status = students_data[student_id]
                     lesson = next(
-                        (l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) 
+                        (l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', [])
                         if l['id'] == lesson_id),
                         None
                     )
@@ -1629,7 +1649,7 @@ def show_student_card(student_id):
                             if date_key in st.session_state.data['attendance']:
                                 for lesson_id, students in st.session_state.data['attendance'][date_key].items():
                                     if student_id in students:
-                                        lesson = next((l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) if l['id'] == lesson_id), None)
+                                        lesson = next((l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', []) if l['id'] == lesson_id), None)
                                         if lesson and lesson['direction'] == direction:
                                             st.session_state.data['attendance'][date_key][lesson_id][student_id]['present'] = bool(row['Был'])
                                             st.session_state.data['attendance'][date_key][lesson_id][student_id]['paid'] = bool(row['Оплачено'])
@@ -1646,8 +1666,7 @@ def show_student_card(student_id):
                             for lesson_id in list(st.session_state.data['attendance'][date_key].keys()):
                                 if student_id in st.session_state.data['attendance'][date_key][lesson_id]:
                                     lesson = next(
-                                        (l for l in st.session_state.data['schedule'] + 
-                                        st.session_state.data.get('single_lessons', [])
+                                        (l for l in st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', [])
                                         if l['id'] == lesson_id and l['direction'] == direction
                                         ), None)
                                     
@@ -1773,7 +1792,7 @@ def show_teacher_card(teacher_id):
             for l_id, exc in lessons.items():
                 if exc.get('type') == 'substitution' and exc.get('teacher_id') == teacher_id:
                     # Находим детали урока
-                    lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
+                    lesson_info = next((l for l in st.session_state.data['schedule'] + st.session_state.data.get('archived_schedule', []) if l['id'] == l_id), None)
                     direction = lesson_info['direction'] if lesson_info else "Неизвестно"
                     time_slot = f"{lesson_info['start_time']}-{lesson_info['end_time']}" if lesson_info else ""
                     
@@ -1893,13 +1912,14 @@ def show_teacher_card(teacher_id):
             st.markdown(f"### 📘 {direction_name}")
             
             lessons = []
-            lessons.extend([l for l in st.session_state.data['schedule']
+            all_schedule_source = st.session_state.data['schedule'] + st.session_state.data.get('archived_schedule', [])
+            lessons.extend([l for l in all_schedule_source
                           if l['direction'] == direction_name 
                           and l['teacher'] == teacher['name']])
             
             subdirections = [k for k, v in direction_map.items() if v == direction_name]
             for subdir in subdirections:
-                lessons.extend([l for l in st.session_state.data['schedule']
+                lessons.extend([l for l in all_schedule_source
                               if l['direction'] == subdir
                               and l['teacher'] == teacher['name']])
             
@@ -2210,9 +2230,8 @@ def show_students_page():
                             for l_id, students_in_l in st.session_state.data['attendance'][d_str].items():
                                 if student['id'] in students_in_l:
                                     # Проверяем направление
-                                    lesson_info = next((l for l in st.session_state.data['schedule'] if l['id'] == l_id), None)
-                                    if not lesson_info:
-                                        lesson_info = next((l for l in st.session_state.data.get('single_lessons', []) if l['id'] == l_id), None)
+                                    all_lessons_source = st.session_state.data['schedule'] + st.session_state.data.get('single_lessons', []) + st.session_state.data.get('archived_schedule', [])
+                                    lesson_info = next((l for l in all_lessons_source if l['id'] == l_id), None)
                                     
                                     if lesson_info and lesson_info.get('direction') == direction:
                                         if students_in_l[student['id']].get('present'):
@@ -2835,15 +2854,14 @@ def show_schedule_page():
                 
                 # Обработка удалений внутри кнопки сохранения (опционально, или отдельной кнопкой)
                 if rows_to_delete_ids:
+                    # Архивируем вместо удаления
+                    items_to_archive = [l for l in schedule if l['id'] in rows_to_delete_ids]
+                    st.session_state.data.setdefault('archived_schedule', []).extend(items_to_archive)
+                    
                     st.session_state.data['schedule'] = [l for l in schedule if l['id'] not in rows_to_delete_ids]
-                    # Чистим посещения
-                    for date_key in list(attendance.keys()):
-                        for del_id in rows_to_delete_ids:
-                            if del_id in attendance[date_key]:
-                                del attendance[date_key][del_id]
-                        if not attendance[date_key]:
-                            del attendance[date_key]
-                    st.toast(f"Удалено {len(rows_to_delete_ids)} занятий")
+                    
+                    # НЕ удаляем посещения, чтобы сохранить историю
+                    st.toast(f"Архивировано {len(rows_to_delete_ids)} занятий")
 
                 if changes_count > 0 or rows_to_delete_ids:
                     save_data(st.session_state.data)
@@ -2860,16 +2878,13 @@ def show_schedule_page():
             if st.button("🗑️ Удалить выбранные"):
                 to_delete_ids = edited_df[edited_df['Удалить']]['id'].tolist()
                 if to_delete_ids:
+                    # Архивируем вместо удаления
+                    items_to_archive = [l for l in schedule if l['id'] in to_delete_ids]
+                    st.session_state.data.setdefault('archived_schedule', []).extend(items_to_archive)
+                    
                     st.session_state.data['schedule'] = [l for l in schedule if l['id'] not in to_delete_ids]
                     
-                    # Удаляем связанные посещения
-                    for date_key in list(attendance.keys()):
-                        for del_id in to_delete_ids:
-                            if del_id in attendance[date_key]:
-                                del attendance[date_key][del_id]
-                        if not attendance[date_key]:
-                            del attendance[date_key]
-                    
+                    # НЕ удаляем посещения
                     save_data(data)
                     if 'log_action' in globals():
                         log_action(st.session_state.username, "Delete Schedule", f"Deleted {len(to_delete_ids)} lessons")
@@ -3686,7 +3701,7 @@ def show_payments_report():
                                 p_date = row['date']
                                 direction = payment['direction']
                                 
-                                for schedule_item in st.session_state.data['schedule']:
+                                for schedule_item in st.session_state.data['schedule'] + st.session_state.data.get('archived_schedule', []):
                                     if schedule_item['direction'] == direction:
                                         day_map = {"Понедельник": 0, "Вторник": 1, "Среда": 2, "Четверг": 3, "Пятница": 4, "Суббота": 5, "Воскресенье": 6}
                                         target_weekday = day_map.get(schedule_item['day'])
