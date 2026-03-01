@@ -3339,18 +3339,112 @@ def show_data_management_page():
     st.progress(min(data_size/1000000, 1), 
                text=f"Использовано: {data_size/1024:.1f} KB / 1 MB ({(data_size/1000000)*100:.1f}%)")
     
+    # --- Блок резервного копирования ---
+    st.subheader("📦 Резервное копирование")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 Создать резервную копию"):
-            if save_data(st.session_state.data):
+        if st.button("🔄 Создать точку восстановления (Архив)"):
+            if archive_data():
                 log_action(st.session_state.username, "Backup", "Created manual backup")
-                st.success("Резервная копия создана!")
+                st.success("Точка восстановления создана!")
     
     with col2:
-        if st.button("🧹 Оптимизировать данные"):
-            if archive_data():
-                st.success("Данные оптимизированы и архивированы!")
+        # Кнопка скачивания текущего JSON
+        st.download_button(
+            label="💾 Скачать копию файла (JSON)",
+            data=json_str,
+            file_name=f"backup_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.json",
+            mime="application/json"
+        )
+
+    st.markdown("---")
+
+    # --- Блок оптимизации ---
+    st.subheader("🧹 Оптимизация и очистка устаревших данных")
+    
+    with st.expander("Настройки очистки", expanded=True):
+        st.warning("⚠️ Внимание! Выбранные данные будут удалены из текущей базы. Перед удалением система автоматически создаст полную резервную копию, которую можно будет восстановить.")
+        
+        # Выбор даты
+        clean_date = st.date_input(
+            "Удалить данные старше чем:", 
+            value=date.today() - timedelta(days=365),
+            help="Будут удалены записи до этой даты"
+        )
+        
+        # Чекбоксы
+        col_opt1, col_opt2 = st.columns(2)
+        with col_opt1:
+            clean_attendance = st.checkbox("Очистить посещения", value=True)
+            clean_payments = st.checkbox("Очистить оплаты", value=True)
+        with col_opt2:
+            clean_archives = st.checkbox("Очистить список старых архивов", value=False, help="Удалит ссылки на старые архивы из меню, но не сами файлы на GitHub")
+            clean_logs = st.checkbox("Очистить историю действий (Audit Log)", value=False)
+
+        if st.button("🚀 Выполнить оптимизацию"):
+            # 1. Создаем резервную копию ПЕРЕД удалением
+            with st.spinner("Создание резервной копии..."):
+                if not archive_data():
+                    st.error("❌ Не удалось создать резервную копию. Оптимизация отменена для безопасности.")
+                    return
+            
+            # 2. Выполняем очистку
+            deleted_info = []
+            
+            # Очистка посещений
+            if clean_attendance:
+                original_len = sum(len(v) for v in st.session_state.data.get('attendance', {}).values())
+                new_attendance = {}
+                for date_str, day_data in st.session_state.data.get('attendance', {}).items():
+                    try:
+                        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+                        if d >= clean_date:
+                            new_attendance[date_str] = day_data
+                    except:
+                        new_attendance[date_str] = day_data # Оставляем, если формат странный
+                
+                st.session_state.data['attendance'] = new_attendance
+                deleted_info.append(f"Удалено дней посещений: {len(st.session_state.data.get('attendance', {})) - len(new_attendance)} (было записей: {original_len})")
+
+            # Очистка оплат
+            if clean_payments:
+                original_len = len(st.session_state.data.get('payments', []))
+                new_payments = []
+                for p in st.session_state.data.get('payments', []):
+                    try:
+                        p_date = datetime.strptime(p['date'], "%Y-%m-%d").date()
+                        if p_date >= clean_date:
+                            new_payments.append(p)
+                    except:
+                        new_payments.append(p)
+                
+                st.session_state.data['payments'] = new_payments
+                deleted_info.append(f"Удалено платежей: {original_len - len(new_payments)}")
+
+            # Очистка списка архивов (ссылок)
+            if clean_archives:
+                # Оставляем только 5 последних
+                archives = st.session_state.data.get('_archives', [])
+                if len(archives) > 5:
+                    st.session_state.data['_archives'] = archives[-5:]
+                    deleted_info.append(f"Очищен список архивов (оставлено 5 последних)")
+
+            # Очистка логов
+            if clean_logs:
+                if os.path.exists(LOG_FILE):
+                    os.remove(LOG_FILE)
+                    deleted_info.append("Файл логов удален")
+
+            # 3. Сохраняем изменения
+            if save_data(st.session_state.data):
+                log_action(st.session_state.username, "Optimize Data", f"Cleaned data older than {clean_date}")
+                st.success("✅ Оптимизация успешно завершена!")
+                for info in deleted_info:
+                    st.info(info)
+                time.sleep(2)
                 st.rerun()
+            else:
+                st.error("Ошибка при сохранении оптимизированных данных.")
     
     st.markdown("---")
     st.subheader("Экспорт данных")
