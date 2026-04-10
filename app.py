@@ -2141,6 +2141,7 @@ def show_students_page():
         if students:
             # Создаем карту родителей для быстрого доступа к именам и телефонам
             parent_info_map = {p['id']: {'name': p['name'], 'phone': p.get('phone', '')} for p in parents}
+            parent_names = ["—"] + [p['name'] for p in parents if 'name' in p]
             
             display_data = []
             for s in students:
@@ -2154,7 +2155,7 @@ def show_students_page():
 
                 display_data.append({
                     "id": s['id'],
-                    "Удалить": False,
+                    "parent_id": p_id, # Скрытое поле для связи при сохранении
                     "ФИО Ученика": str(s.get('name', '')),
                     "Дата рождения": clean_dob,
                     "Пол": s.get('gender', 'Мальчик'),
@@ -2162,7 +2163,7 @@ def show_students_page():
                     "📞 Телефон(ы)": str(parent_info_map.get(p_id, {}).get('phone', '')),
                     "Направления": ", ".join(s.get('directions', [])) if isinstance(s.get('directions'), list) else str(s.get('directions', '')),
                     "Заметки": str(s.get('notes', '')),
-                    "parent_id": p_id # Скрытое поле для связи при сохранении
+                    "Удалить": False # Перенесено в конец
                 })
 
             df = pd.DataFrame(display_data)
@@ -2173,13 +2174,14 @@ def show_students_page():
                 column_config={
                     "id": None, # Скрываем ID
                     "parent_id": None, # Скрываем ID родителя
-                    "Удалить": st.column_config.CheckboxColumn("🗑️", help="Отметьте для удаления"),
                     "ФИО Ученика": st.column_config.TextColumn("ФИО Ученика", width="medium"),
-                    "Родитель": st.column_config.TextColumn("Родитель (ФИО)", disabled=True),
-                    "📞 Телефон(ы)": st.column_config.TextColumn("📞 Телефон(ы)", help="Можно вписать несколько номеров через запятую", width="medium"),
                     "Дата рождения": st.column_config.DateColumn("Дата рождения"),
                     "Пол": st.column_config.SelectboxColumn("Пол", options=["Мальчик", "Девочка"]),
-                    "Направления": st.column_config.TextColumn("Направления (через запятую)")
+                    "Родитель": st.column_config.SelectboxColumn("Родитель (ФИО)", options=parent_names, help="Выберите родителя из списка"),
+                    "📞 Телефон(ы)": st.column_config.TextColumn("📞 Телефон(ы)", help="Можно вписать несколько номеров через запятую", width="medium"),
+                    "Направления": st.column_config.TextColumn("Направления", help="Введите через запятую (множественный выбор пока не поддерживается)"),
+                    "Заметки": st.column_config.TextColumn("Заметки"),
+                    "Удалить": st.column_config.CheckboxColumn("🗑️ Удалить", help="Отметьте для удаления")
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -2204,6 +2206,8 @@ def show_students_page():
 
                     # Б) Синхронизация правок
                     current_students = st.session_state.data['students']
+                    current_parents = st.session_state.data['parents']
+                    
                     for _, row in edited_df.iterrows():
                         if row['id'] in to_delete_ids: continue
                         
@@ -2213,17 +2217,28 @@ def show_students_page():
                                 s['name'] = row['ФИО Ученика']
                                 s['dob'] = str(row['Дата рождения']) if row['Дата рождения'] else None
                                 s['gender'] = row['Пол']
-                                s['notes'] = row['Заметки']
+                                s['notes'] = str(row['Заметки']) if pd.notna(row['Заметки']) else ''
+                                
                                 # Обратно в список
                                 dirs_raw = row['Направления']
-                                s['directions'] = [d.strip() for d in str(dirs_raw).split(',') if d.strip()]
-                        
-                        # Обновляем телефон родителя в общем списке parents
-                        pid = row['parent_id']
-                        if pid:
-                            for p in st.session_state.data['parents']:
-                                if p['id'] == pid:
-                                    p['phone'] = row['📞 Телефон(ы)']
+                                if pd.notna(dirs_raw):
+                                    s['directions'] = [d.strip() for d in str(dirs_raw).split(',') if d.strip()]
+                                else:
+                                    s['directions'] = []
+                                # Обновляем родителя
+                                selected_parent_name = row['Родитель']
+                                if pd.notna(selected_parent_name) and selected_parent_name != '—':
+                                    # Ищем родителя по имени
+                                    matched_parent = next((p for p in current_parents if p.get('name') == selected_parent_name), None)
+                                    if matched_parent:
+                                        s['parent_id'] = matched_parent['id']
+                                        # Обновляем телефон выбранному родителю
+                                        new_phone = row['📞 Телефон(ы)']
+                                        if pd.notna(new_phone):
+                                        
+                                            matched_parent['phone'] = str(new_phone)
+                                else:
+                                    s['parent_id'] = None
 
                     save_data(st.session_state.data)
                     st.success("Все данные и телефоны синхронизированы!")
