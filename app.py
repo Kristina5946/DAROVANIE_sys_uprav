@@ -2059,7 +2059,7 @@ def show_teacher_card(teacher_id):
 def show_students_page():
     st.header("👦👧 Ученики и оплаты")
 
-    # 1. Проверка режима редактирования карточки (Твоя логика)
+    # 1. Проверка режима редактирования карточки [cite: 19]
     if st.session_state.get('edit_student_id'):
         if st.button("🔙 Вернуться к списку"):
             st.session_state.edit_student_id = None
@@ -2067,19 +2067,19 @@ def show_students_page():
         show_student_card(st.session_state.edit_student_id)
         return
 
-    # 2. Подготовка данных
+    # 2. Подготовка данных [cite: 2, 7]
     students = st.session_state.data.get('students', [])
     parents = st.session_state.data.get('parents', [])
     directions = st.session_state.data.get('directions', [])
 
-    # Гарантируем наличие ID для всех учеников
+    # Гарантируем наличие ID для всех учеников [cite: 1, 9]
     for s in students:
         if 'id' not in s:
             s['id'] = str(uuid.uuid4())
 
     view_mode = st.radio("Режим отображения", ["📋 Таблица", "🧾 Карточки"], horizontal=True)
 
-    # 3. Форма добавления нового ученика (Твой блок без сокращений)
+    # 3. Форма добавления нового ученика [cite: 22]
     with st.expander("➕ Добавить нового ученика"):
         with st.form("new_student_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -2136,17 +2136,17 @@ def show_students_page():
                 else:
                     st.error("Введите ФИО.")
 
-    # 4. Режим ТАБЛИЦЫ (Исправленный и синхронизированный)
+    # 4. Режим ТАБЛИЦЫ (С полностью редактируемыми ФИО родителей и телефонами) [cite: 19]
     if view_mode == "📋 Таблица":
         if students:
-            # Создаем карту родителей для быстрого доступа к именам и телефонам
+            # Создаем карту родителей для быстрого доступа [cite: 15]
             parent_info_map = {p['id']: {'name': p['name'], 'phone': p.get('phone', '')} for p in parents}
-            parent_names = ["—"] + [p['name'] for p in parents if 'name' in p]
             
             display_data = []
             for s in students:
                 p_id = s.get('parent_id')
-                # Безопасное преобразование даты для корректной работы редактора
+                
+                # Принудительная конвертация даты для стабильности таблицы [cite: 16]
                 raw_dob = s.get('dob')
                 try:
                     clean_dob = datetime.strptime(raw_dob, '%Y-%m-%d').date() if isinstance(raw_dob, str) else raw_dob
@@ -2155,94 +2155,73 @@ def show_students_page():
 
                 display_data.append({
                     "id": s['id'],
-                    "parent_id": p_id, # Скрытое поле для связи при сохранении
+                    "Удалить": False,
                     "ФИО Ученика": str(s.get('name', '')),
                     "Дата рождения": clean_dob,
                     "Пол": s.get('gender', 'Мальчик'),
-                    "Родитель": parent_info_map.get(p_id, {}).get('name', '—'),
+                    "ФИО Родителя": parent_info_map.get(p_id, {}).get('name', '—'),
                     "📞 Телефон(ы)": str(parent_info_map.get(p_id, {}).get('phone', '')),
                     "Направления": ", ".join(s.get('directions', [])) if isinstance(s.get('directions'), list) else str(s.get('directions', '')),
                     "Заметки": str(s.get('notes', '')),
-                    "Удалить": False # Перенесено в конец
+                    "parent_id": p_id 
                 })
 
             df = pd.DataFrame(display_data)
 
-            # Редактор таблицы
+            # Редактор таблицы [cite: 19]
             edited_df = st.data_editor(
                 df,
                 column_config={
-                    "id": None, # Скрываем ID
-                    "parent_id": None, # Скрываем ID родителя
+                    "id": None, # Скрыто
+                    "parent_id": None, # Скрыто
+                    "Удалить": st.column_config.CheckboxColumn("🗑️"),
                     "ФИО Ученика": st.column_config.TextColumn("ФИО Ученика", width="medium"),
+                    "ФИО Родителя": st.column_config.TextColumn("ФИО Родителя", width="medium"), # ТЕПЕРЬ РЕДАКТИРУЕМО
+                    "📞 Телефон(ы)": st.column_config.TextColumn("📞 Телефон(ы)", width="medium"), # РЕДАКТИРУЕМО
                     "Дата рождения": st.column_config.DateColumn("Дата рождения"),
                     "Пол": st.column_config.SelectboxColumn("Пол", options=["Мальчик", "Девочка"]),
-                    "Родитель": st.column_config.SelectboxColumn("Родитель (ФИО)", options=parent_names, help="Выберите родителя из списка"),
-                    "📞 Телефон(ы)": st.column_config.TextColumn("📞 Телефон(ы)", help="Можно вписать несколько номеров через запятую", width="medium"),
-                    "Направления": st.column_config.TextColumn("Направления", help="Введите через запятую (множественный выбор пока не поддерживается)"),
-                    "Заметки": st.column_config.TextColumn("Заметки"),
-                    "Удалить": st.column_config.CheckboxColumn("🗑️ Удалить", help="Отметьте для удаления")
+                    "Направления": st.column_config.TextColumn("Направления")
                 },
                 hide_index=True,
                 use_container_width=True,
-                key="students_main_table_final"
+                key="students_final_table_v3"
             )
 
-            col_btn1, col_btn2 = st.columns([1, 2])
-            with col_btn1:
-                if st.button("💾 Сохранить всё", type="primary"):
-                    # А) Обработка удаления
-                    to_delete_ids = edited_df[edited_df['Удалить'] == True]['id'].tolist()
-                    if to_delete_ids:
-                        st.session_state.data['students'] = [s for s in students if s['id'] not in to_delete_ids]
-                        # Удаляем связанные данные (платежи и посещения)
-                        st.session_state.data['payments'] = [p for p in st.session_state.data.get('payments', []) if p['student_id'] not in to_delete_ids]
-                        for d_key in st.session_state.data.get('attendance', {}):
-                            for l_id in st.session_state.data['attendance'][d_key]:
-                                for sid in to_delete_ids:
-                                    st.session_state.data['attendance'][d_key][l_id].pop(sid, None)
-                        
-                        log_action(st.session_state.username, "Delete Students", f"Deleted {len(to_delete_ids)} students")
+            if st.button("💾 Сохранить изменения", type="primary"):
+                # А) Удаление отмеченных [cite: 20]
+                to_delete_ids = edited_df[edited_df['Удалить'] == True]['id'].tolist()
+                if to_delete_ids:
+                    st.session_state.data['students'] = [s for s in students if s['id'] not in to_delete_ids]
+                    st.session_state.data['payments'] = [p for p in st.session_state.data.get('payments', []) if p['student_id'] not in to_delete_ids]
+                    log_action(st.session_state.username, "Delete Students", f"Deleted {len(to_delete_ids)} students")
 
-                    # Б) Синхронизация правок
-                    current_students = st.session_state.data['students']
-                    current_parents = st.session_state.data['parents']
+                # Б) Синхронизация правок учеников и родителей [cite: 7]
+                current_students = st.session_state.data['students']
+                for _, row in edited_df.iterrows():
+                    if row['id'] in to_delete_ids: continue
                     
-                    for _, row in edited_df.iterrows():
-                        if row['id'] in to_delete_ids: continue
-                        
-                        # Обновляем ученика
-                        for s in current_students:
-                            if s['id'] == row['id']:
-                                s['name'] = row['ФИО Ученика']
-                                s['dob'] = str(row['Дата рождения']) if row['Дата рождения'] else None
-                                s['gender'] = row['Пол']
-                                s['notes'] = str(row['Заметки']) if pd.notna(row['Заметки']) else ''
-                                
-                                # Обратно в список
-                                dirs_raw = row['Направления']
-                                if pd.notna(dirs_raw):
-                                    s['directions'] = [d.strip() for d in str(dirs_raw).split(',') if d.strip()]
-                                else:
-                                    s['directions'] = []
-                                # Обновляем родителя
-                                selected_parent_name = row['Родитель']
-                                if pd.notna(selected_parent_name) and selected_parent_name != '—':
-                                    # Ищем родителя по имени
-                                    matched_parent = next((p for p in current_parents if p.get('name') == selected_parent_name), None)
-                                    if matched_parent:
-                                        s['parent_id'] = matched_parent['id']
-                                        # Обновляем телефон выбранному родителю
-                                        new_phone = row['📞 Телефон(ы)']
-                                        if pd.notna(new_phone):
-                                        
-                                            matched_parent['phone'] = str(new_phone)
-                                else:
-                                    s['parent_id'] = None
+                    # Обновляем данные ученика
+                    for s in current_students:
+                        if s['id'] == row['id']:
+                            s['name'] = row['ФИО Ученика']
+                            s['dob'] = str(row['Дата рождения']) if row['Дата рождения'] else None
+                            s['gender'] = row['Пол']
+                            s['notes'] = row['Заметки']
+                            dirs_raw = row['Направления']
+                            s['directions'] = [d.strip() for d in str(dirs_raw).split(',') if d.strip()]
+                    
+                    # Обновляем данные родителя (ФИО и телефон) [cite: 15]
+                    pid = row['parent_id']
+                    if pid:
+                        for p in st.session_state.data['parents']:
+                            if p['id'] == pid:
+                                p['name'] = row['ФИО Родителя']
+                                p['phone'] = row['📞 Телефон(ы)']
 
-                    save_data(st.session_state.data)
-                    st.success("Все данные и телефоны синхронизированы!")
-                    st.rerun()
+                save_data(st.session_state.data)
+                log_action(st.session_state.username, "Edit Students", "Updated students and parents from table")
+                st.success("Данные успешно сохранены!")
+                st.rerun()
 
         else:
             st.info("Нет учеников.")
